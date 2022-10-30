@@ -15,6 +15,6 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("{}", e);
+        eprintln!("[Error]: {}", e);
     }
 }
