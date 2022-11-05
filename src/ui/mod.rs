@@ -6,7 +6,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::{
-    borrow::{Borrow, BorrowMut},
     cell::RefCell,
     io::Stdout,
 };
@@ -28,7 +27,7 @@ static LOGO: &'static str = r#"|      _)            _)  |
 
 trait Page<B: Backend> {
     /// Draw page according to state
-    fn paint(&self, f: &mut Frame<B>);
+    fn paint(&self, f: &mut Frame<B>, r: Rect);
     /// Processing events and updating state
     fn process(&mut self, ui_state: &mut UiState);
 }
@@ -41,10 +40,16 @@ pub struct Ui {
     pages: Vec<Box<dyn Page<UiBackend>>>,
 }
 
-pub struct UiState {
+struct UiState {
     pub step: usize,
     pub event: Event,
     pub runnable: bool,
+}
+
+macro_rules! pages {
+    [$($page:ident),+] => (
+        vec![$(Box::new($page::new())),+]
+    );
 }
 
 impl Ui {
@@ -66,27 +71,34 @@ impl Ui {
                 event: Event::FocusGained,
                 runnable: true,
             },
-            pages: vec![Box::new(Welcome), Box::new(Install::new())],
+            pages: pages![Welcome, Install],
         })
     }
 
     pub fn exec(mut self) -> Result<()> {
         while self.state.runnable {
             self.paint()?;
-            self.state.borrow_mut().event = event::read()?;
+            self.state.event = event::read()?;
             self.process()?;
         }
 
-        Ok(())
+        self.clean_up()
     }
 
     fn paint(&self) -> Result<()> {
-        self.terminal
-            .borrow_mut()
-            .draw(|f| {
-                self.basic_ui(f);
-                self.pages[self.state.step].paint(f);
-            })?;
+        self.terminal.borrow_mut().draw(|f| {
+            self.basic_ui(f);
+            self.pages[self.state.step].paint(
+                f,
+                // Rectangle of Page
+                Rect {
+                    x: 2,
+                    y: 2,
+                    width: f.size().width - 4,
+                    height: f.size().height - 2,
+                },
+            );
+        })?;
 
         Ok(())
     }
@@ -98,7 +110,7 @@ impl Ui {
     }
 
     fn basic_ui<B: Backend>(&self, f: &mut Frame<B>) {
-        let state = self.state.borrow();
+        let state = &self.state;
 
         // Render the tabs
         let titles = ["Welcome", "Install Limit", "Config & Deploy"]
@@ -115,36 +127,31 @@ impl Ui {
             .divider(">");
 
         f.render_widget(tab, f.size());
-
-        // Render tip
-        let tip = Spans::from(format!(
-            "{}Press <Q> to exit.",
-            (state.step > 0)
-                .then_some("Press ←  to previous step; ")
-                .unwrap_or_default()
-        ));
-
-        let width = tip.width() as u16;
-
-        f.render_widget(
-            Block::default().title(tip),
-            Rect {
-                x: 2,
-                y: f.size().height - 2,
-                width,
-                height: 1,
-            },
-        );
     }
-}
 
-impl Drop for Ui {
-    fn drop(&mut self) {
+    fn clean_up(self) -> Result<()> {
         execute!(
             self.terminal.borrow_mut().backend_mut(),
             LeaveAlternateScreen
-        )
-        .unwrap();
-        disable_raw_mode().unwrap();
+        )?;
+        disable_raw_mode()?;
+
+        Ok(())
     }
+}
+
+fn split_rect(rect: Rect) -> (Rect, Rect) {
+    (
+        // Main
+        Rect {
+            height: rect.height.saturating_sub(2),
+            ..rect
+        },
+        // Tip
+        Rect {
+            y: rect.height,
+            height: 1,
+            ..rect
+        },
+    )
 }
