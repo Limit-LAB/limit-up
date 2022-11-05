@@ -1,14 +1,16 @@
+use std::cmp::min;
+
 use crossterm::event::{Event, KeyCode};
 use tui::{
     backend::Backend,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Style},
     text::Text,
     widgets::{Block, Paragraph},
     Frame,
 };
 
-use super::{split_rect, Page, UiState};
+use super::{Page, UiState};
 
 pub struct Welcome;
 
@@ -26,33 +28,30 @@ impl<B: Backend> Page<B> for Welcome {
                 .into_iter(),
         );
 
-        let width = title.width() as u16;
+        let layout = Layout::default()
+            .constraints([
+                Constraint::Min(title.height() as u16),
+                Constraint::Length(1),
+            ])
+            .split(r);
+
         let height = title.height() as u16;
 
-        let x = (f.size().width / 2).saturating_sub(width / 2);
-        let y = (f.size().height / 2).saturating_sub(height / 2);
+        let y = (layout[0].height / 2).saturating_sub(height / 2) + layout[0].y;
 
         f.render_widget(
             Paragraph::new(title).alignment(Alignment::Center),
             // Render limit logo in the center of the screen
             // It hides when it doesn't have enough space to render
             Rect {
-                x,
                 y,
-                width: if width + x > f.size().width { 0 } else { width },
-                height: if height + y > f.size().height {
-                    0
-                } else {
-                    height
-                },
+                height: min(height, layout[0].height),
+                ..layout[0]
             },
         );
 
         // Render tip
-        f.render_widget(
-            Block::default().title("Press <Q> to exit."),
-            split_rect(r).1,
-        );
+        f.render_widget(Block::default().title("Press <Q> to exit."), layout[1]);
     }
 
     fn process(&mut self, ui_state: &mut UiState) {

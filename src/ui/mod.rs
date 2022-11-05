@@ -94,8 +94,8 @@ impl Ui {
                 Rect {
                     x: 2,
                     y: 2,
-                    width: f.size().width - 4,
-                    height: f.size().height - 2,
+                    width: f.size().width.saturating_sub(4),
+                    height: f.size().height.saturating_sub(3),
                 },
             );
         })?;
@@ -138,20 +138,4 @@ impl Ui {
 
         Ok(())
     }
-}
-
-fn split_rect(rect: Rect) -> (Rect, Rect) {
-    (
-        // Main
-        Rect {
-            height: rect.height.saturating_sub(2),
-            ..rect
-        },
-        // Tip
-        Rect {
-            y: rect.height,
-            height: 1,
-            ..rect
-        },
-    )
 }

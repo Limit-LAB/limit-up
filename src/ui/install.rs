@@ -1,14 +1,14 @@
 use crossterm::event::{Event, KeyCode};
 use tui::{
     backend::Backend,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Rect, Layout, Constraint},
     style::{Color, Style},
     text::Spans,
     widgets::{Block, Borders},
     Frame,
 };
 
-use super::{split_rect, Page, UiState};
+use super::{Page, UiState};
 
 pub struct Install;
 
@@ -20,14 +20,20 @@ impl Install {
 
 impl<B: Backend> Page<B> for Install {
     fn paint(&self, f: &mut Frame<B>, r: Rect) {
-        let (main, tip) = split_rect(r);
+        let layout = Layout::default()
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(1)
+            ])
+            .split(r.clone());
+
         // TODO
-        f.render_widget(Block::default().borders(Borders::ALL), main);
+        f.render_widget(Block::default().borders(Borders::ALL), layout[0]);
 
         // Render tip
         f.render_widget(
             Block::default().title("Press ←  to previous step; Press <Q> to exit."),
-            tip,
+            layout[1],
         );
     }
 
@@ -37,6 +43,7 @@ impl<B: Backend> Page<B> for Install {
             match key.code {
                 // Quit
                 KeyCode::Char('q') => ui_state.runnable = false,
+                // Back to welcome
                 KeyCode::Left => ui_state.step = 0,
                 _ => {}
             }
