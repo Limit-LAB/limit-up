@@ -10,6 +10,6 @@ description = "A CLI tool that helps you to setup limit-server."
 [dependencies]
 mod_use = "0.2.1"
 clap = { version = "4.0", features = ["derive"] }
-tui = "0.19"
-crossterm = "0.25"
 os_info = "3.5.1"
+cursive = { version = "0.20.0", default-features = false, features = ["crossterm-backend"] }
+cursive-tabs = "0.7"

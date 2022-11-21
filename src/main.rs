@@ -7,7 +7,7 @@ fn run() -> Result<()> {
     println!("{:#?}", args);
 
     match args.cmd.as_ref().unwrap_or(&Command::Tui) {
-        Command::Tui => Ui::setup()?.exec()?,
+        Command::Tui => Ui::setup().exec(),
     };
 
     Ok(())

@@ -1,141 +1,40 @@
-mod_use::mod_use!(welcome, install);
+mod_use::mod_use!(install, widgets, frontend);
 
-use crossterm::{
-    event::{self, Event},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+use cursive::{
+    theme::{BaseColor::*, Color::*, PaletteColor::*},
+    Cursive, CursiveExt,
 };
-use std::{
-    cell::RefCell,
-    io::Stdout,
-};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    layout::Rect,
-    style::{Color, Style},
-    text::Spans,
-    widgets::{Block, Borders, Tabs},
-    Frame, Terminal,
-};
-
-use crate::Result;
 
 static LOGO: &'static str = r#"|      _)            _)  |
- |       |  __ `__ \   |  __|
- |       |  |   |   |  |  |  
- _____| _| _|  _|  _| _| \__|"#;
-
-trait Page<B: Backend> {
-    /// Draw page according to state
-    fn paint(&self, f: &mut Frame<B>, r: Rect);
-    /// Processing events and updating state
-    fn process(&mut self, ui_state: &mut UiState);
-}
-
-type UiBackend = CrosstermBackend<Stdout>;
+  |       |  __ `__ \   |  __|
+  |       |  |   |   |  |  |  
+  _____| _| _|  _|  _| _| \__|"#;
 
 pub struct Ui {
-    terminal: RefCell<Terminal<UiBackend>>,
-    state: UiState,
-    pages: Vec<Box<dyn Page<UiBackend>>>,
-}
-
-struct UiState {
-    pub step: usize,
-    pub event: Event,
-    pub runnable: bool,
-}
-
-macro_rules! pages {
-    [$($page:ident),+] => (
-        vec![$(Box::new($page::new())),+]
-    );
+    ui: Cursive,
 }
 
 impl Ui {
-    pub fn setup() -> Result<Self> {
-        let mut stdout = std::io::stdout();
+    pub fn setup() -> Self {
+        let mut ui = Cursive::new();
 
-        execute!(stdout, EnterAlternateScreen)?;
-        enable_raw_mode()?;
+        ui.with_theme(|t| {
+            t.shadow = false;
 
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+            t.palette[Background] = TerminalDefault;
+            t.palette[View] = TerminalDefault;
+            t.palette[Primary] = White.light();
+            t.palette[TitlePrimary] = Blue.light();
+            t.palette[Secondary] = Blue.light();
+            t.palette[Highlight] = Cyan.light();
+        });
 
-        terminal.clear()?;
+        init_install_ui(&mut ui);
 
-        Ok(Self {
-            terminal: RefCell::new(terminal),
-            state: UiState {
-                step: 0,
-                event: Event::FocusGained,
-                runnable: true,
-            },
-            pages: pages![Welcome, Install],
-        })
+        Self { ui }
     }
 
-    pub fn exec(mut self) -> Result<()> {
-        while self.state.runnable {
-            self.paint()?;
-            self.state.event = event::read()?;
-            self.process()?;
-        }
-
-        self.clean_up()
-    }
-
-    fn paint(&self) -> Result<()> {
-        self.terminal.borrow_mut().draw(|f| {
-            self.basic_ui(f);
-            self.pages[self.state.step].paint(
-                f,
-                // Rectangle of Page
-                Rect {
-                    x: 2,
-                    y: 2,
-                    width: f.size().width.saturating_sub(4),
-                    height: f.size().height.saturating_sub(3),
-                },
-            );
-        })?;
-
-        Ok(())
-    }
-
-    fn process(&mut self) -> Result<()> {
-        self.pages[self.state.step].process(&mut self.state);
-
-        Ok(())
-    }
-
-    fn basic_ui<B: Backend>(&self, f: &mut Frame<B>) {
-        let state = &self.state;
-
-        // Render the tabs
-        let titles = ["Welcome", "Install Limit", "Config & Deploy"]
-            .iter()
-            .cloned()
-            .map(Spans::from)
-            .collect();
-
-        let tab = Tabs::new(titles)
-            .block(Block::default().title(" Limit Up ").borders(Borders::ALL))
-            .style(Style::default().fg(Color::White))
-            .select(state.step)
-            .highlight_style(Style::default().fg(Color::Cyan))
-            .divider(">");
-
-        f.render_widget(tab, f.size());
-    }
-
-    fn clean_up(self) -> Result<()> {
-        execute!(
-            self.terminal.borrow_mut().backend_mut(),
-            LeaveAlternateScreen
-        )?;
-        disable_raw_mode()?;
-
-        Ok(())
+    pub fn exec(mut self) {
+        self.ui.run();
     }
 }
