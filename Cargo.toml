@@ -12,4 +12,3 @@ mod_use = "0.2.1"
 clap = { version = "4.0", features = ["derive"] }
 os_info = "3.5.1"
 cursive = { version = "0.20.0", default-features = false, features = ["crossterm-backend"] }
-cursive-tabs = "0.7"

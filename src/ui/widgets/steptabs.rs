@@ -4,25 +4,24 @@ use cursive::{
     traits::*,
     utils::markup::StyledString,
     view::Selector,
-    views::{LinearLayout, NamedView, PaddedView, Panel, ResizedView, TextView},
+    views::{
+        BoxedView, LinearLayout, NamedView, PaddedView, Panel, ResizedView, ScreensView, TextView,
+    },
     Vec2, View,
 };
-use cursive_tabs::TabView;
 
 pub struct StepTabs {
-    index: usize,
-    count: usize,
+    titles: Vec<String>,
     layout: Panel<PaddedView<LinearLayout>>,
 }
 
 impl StepTabs {
     pub fn new() -> Self {
         Self {
-            index: 0,
-            count: 0,
+            titles: Vec::new(),
             layout: LinearLayout::vertical()
                 .child(TextView::new("").full_width())
-                .child(TabView::new().full_screen())
+                .child(ScreensView::<BoxedView>::new().full_screen())
                 .wrap_with(|layout| PaddedView::lrtb(1, 1, 0, 0, layout))
                 .wrap_with(|layout| Panel::new(layout)),
         }
@@ -34,53 +33,52 @@ impl StepTabs {
     }
 
     pub fn with_tab(mut self, tab: NamedView<impl View>) -> Self {
-        let index = self.index;
-        let tab_view = self.get_view_mut::<ResizedView<TabView>>(1).get_inner_mut();
+        self.titles.push(tab.name().to_string());
 
-        tab_view.add_tab(tab);
-
-        tab_view
-            .tab_order()
-            .get(index)
-            .map(|id| tab_view.set_active_tab(id));
+        self.get_inner_view_mut::<ResizedView<ScreensView>>(1)
+            .get_inner_mut()
+            .add_screen(BoxedView::boxed(tab));
 
         self.update_bar();
-        self.count += 1;
 
         self
     }
 
     pub fn active_tab(&self) -> usize {
-        self.index
+        self.get_inner_view::<ResizedView<ScreensView>>(1)
+            .get_inner()
+            .active_screen()
     }
 
     pub fn next(&mut self) {
-        if self.index + 1 == self.count {
+        let index = self.active_tab();
+
+        if self.titles.is_empty() || index + 1 == self.titles.len() {
             return;
         }
 
-        self.index += 1;
-        self.update_bar();
-
-        self.get_view_mut::<ResizedView<TabView>>(1)
+        self.get_inner_view_mut::<ResizedView<ScreensView>>(1)
             .get_inner_mut()
-            .next();
+            .set_active_screen(index + 1);
+
+        self.update_bar();
     }
 
     pub fn prev(&mut self) {
-        if self.index == 0 {
+        let index = self.active_tab();
+
+        if index == 0 {
             return;
         }
 
-        self.index -= 1;
-        self.update_bar();
-
-        self.get_view_mut::<ResizedView<TabView>>(1)
+        self.get_inner_view_mut::<ResizedView<ScreensView>>(1)
             .get_inner_mut()
-            .prev();
+            .set_active_screen(index - 1);
+
+        self.update_bar();
     }
 
-    fn get_view<V: View>(&self, i: usize) -> &V {
+    fn get_inner_view<V: View>(&self, i: usize) -> &V {
         self.layout
             .get_inner()
             .get_inner()
@@ -89,7 +87,7 @@ impl StepTabs {
             .unwrap()
     }
 
-    fn get_view_mut<V: View>(&mut self, i: usize) -> &mut V {
+    fn get_inner_view_mut<V: View>(&mut self, i: usize) -> &mut V {
         self.layout
             .get_inner_mut()
             .get_inner_mut()
@@ -99,23 +97,25 @@ impl StepTabs {
     }
 
     fn update_bar(&mut self) {
-        let tab_view = self.get_view::<ResizedView<TabView>>(1).get_inner();
-        let tab_names = tab_view.tab_order();
-
-        let text = tab_names
+        let text = self
+            .titles
             .iter()
             .enumerate()
             .map(|(i, name)| {
-                let mut t = match i == self.index {
+                let mut t = match i == self.active_tab() {
                     true => StyledString::styled(name, BaseColor::Cyan.light()),
                     false => StyledString::plain(name),
                 };
-                t.append_plain(if i + 1 == tab_names.len() { "" } else { " > " });
+                t.append_plain(if i + 1 == self.titles.len() {
+                    ""
+                } else {
+                    " > "
+                });
                 t
             })
             .collect::<StyledString>();
 
-        self.get_view_mut::<ResizedView<TextView>>(0)
+        self.get_inner_view_mut::<ResizedView<TextView>>(0)
             .get_inner_mut()
             .set_content(text);
     }
@@ -162,9 +162,5 @@ impl View for StepTabs {
 
     fn important_area(&self, view_size: Vec2) -> cursive::Rect {
         self.layout.important_area(view_size)
-    }
-
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<Self>()
     }
 }
