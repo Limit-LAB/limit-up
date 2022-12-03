@@ -10,6 +10,11 @@ static LOGO: &'static str = r#"|      _)            _)  |
   |       |  |   |   |  |  |  
   _____| _| _|  _|  _| _| \__|"#;
 
+#[derive(Debug, Default)]
+struct UserData {
+    install: InstallConfig,
+}
+
 pub struct Ui {
     ui: Cursive,
 }
@@ -29,7 +34,15 @@ impl Ui {
             t.palette[Highlight] = Cyan.light();
         });
 
+        ui.set_user_data(UserData::default());
+
         init_install_ui(&mut ui);
+
+        ui.add_screen();
+
+        init_frontend_ui(&mut ui);
+
+        ui.set_screen(0);
 
         Self { ui }
     }

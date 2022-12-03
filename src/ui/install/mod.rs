@@ -1,17 +1,21 @@
-mod_use::mod_use!(welcome);
+mod_use::mod_use!(welcome, install);
 
 use cursive::{traits::*, views::DummyView, Cursive};
 
 use crate::StepTabs;
 
+#[derive(Debug, Default)]
+pub struct InstallConfig {
+    sql: String,
+}
+
 pub fn init_install_ui(ui: &mut Cursive) {
-    ui.add_fullscreen_layer(
-        StepTabs::new()
-            .title("Limit up")
-            .with_tab(welcome())
-            // TODO
-            .with_tab(DummyView {}.with_name("Install"))
-            .with_tab(DummyView {}.with_name("Deploy & Config"))
-            .with_name("tab"),
-    );
+    let tab = StepTabs::new()
+        .with_tab(welcome())
+        .with_tab(install())
+        // TODO
+        .with_tab(DummyView {}.with_name("Config & Deploy"))
+        .with_name("steptabs");
+
+    ui.add_fullscreen_layer(tab);
 }

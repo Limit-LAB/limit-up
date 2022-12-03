@@ -20,7 +20,8 @@ A CLI tool that helps you to setup limit-server :)");
                 .child(Button::new_raw("[ Quit ]", |ui| ui.quit()))
                 .child(DummyView {}.full_width())
                 .child(Button::new_raw("[ Next ]", |ui| {
-                    ui.find_name::<StepTabs>("tab").unwrap().next()
+                    ui.find_name::<StepTabs>("steptabs").unwrap().next();
+                    ui.add_layer(super::install_config_dialog());
                 }))
                 .with(|layout| {
                     layout.set_focus_index(2).unwrap();
