@@ -1,5 +1,7 @@
 mod_use::mod_use!(args, error, ui);
 
+mod core;
+
 fn run() -> Result<()> {
     let args = Args::parse();
 
