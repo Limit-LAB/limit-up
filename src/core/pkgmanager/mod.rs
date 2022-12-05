@@ -1,5 +1,5 @@
 use std::{
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
     sync::Arc,
 };
 
@@ -19,12 +19,16 @@ macro_rules! impl_pkg_manager {
             fn install(&self, pkg: &str) -> std::io::Result<Child> {
                 Command::new($name)
                     .args(vec![$install.into(), pkg, $($flag),*])
+                    .stderr(Stdio::piped())
+                    .stdout(Stdio::piped())
                     .spawn()
             }
 
             fn uninstall(&self, pkg: &str) -> std::io::Result<Child> {
                 Command::new($name)
                     .args(vec![$uninstall.into(), pkg, $($flag),*])
+                    .stderr(Stdio::piped())
+                    .stdout(Stdio::piped())
                     .spawn()
             }
 
@@ -51,6 +55,21 @@ pub enum Error {
     NotSupported,
 }
 
+impl std::error::Error for Error {}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Error::IoError(ref e) => write!(f, "I/O error: {}", e),
+            Error::PermissionDenied => write!(
+                f,
+                "Permission denied, please rerun as root or administrator"
+            ),
+            Error::NotSupported => write!(f, "Unsupported package manager or platform"),
+        }
+    }
+}
+
 macro_rules! boxed_mgrs {
     ($($mgr:ident),+) => {
         vec![$(Box::new($mgr {})),+]
@@ -63,15 +82,15 @@ static PKG_MANAGER: Lazy<PkgManagerFactory> = Lazy::new(init_pkg_manager);
 
 fn init_pkg_manager() -> PkgManagerFactory {
     #[cfg(target_family = "unix")]
-    let pkgs: Vec<Box<dyn PkgManager + Send + Sync>> = boxed_mgrs![Apt, Dnf, Pacman, Zypper];
+    let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> = boxed_mgrs![Apt, Dnf, Pacman, Zypper];
 
     #[cfg(target_family = "unix")]
-    return pkgs
+    return mgrs
         .into_iter()
-        .find(|pkg| Command::new(pkg.name()).output().is_ok())
+        .find(|mgr| Command::new(mgr.name()).output().is_ok())
         .ok_or(Error::NotSupported)
-        .and_then(|pkg| match unsafe { libc::geteuid() } {
-            0 => Ok(pkg),
+        .and_then(|mgr| match unsafe { libc::geteuid() } {
+            0 => Ok(mgr),
             _ => Err(Error::PermissionDenied),
         });
 
@@ -98,4 +117,37 @@ pub fn name() -> Result<&'static str, Error> {
         .as_ref()
         .map(|mgr| mgr.name())
         .map_err(|e| e.clone())
+}
+
+// Please run the test as administrator serial
+#[cfg(test)]
+mod tests {    
+    #[test]
+    fn name() {
+        println!("package manager: {}", super::name().unwrap());
+    }
+
+    #[test]
+    fn install() {
+        let res = super::install("cowsay")
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+
+        println!("{}", res.status);
+        println!("stdout:\n {}\n", String::from_utf8(res.stdout).unwrap());
+        println!("stderr:\n {}\n", String::from_utf8(res.stderr).unwrap());
+    }
+
+    #[test]
+    fn uninstall() {
+        let res = super::uninstall("cowsay")
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+
+        println!("{}", res.status);
+        println!("stdout:\n {}\n", String::from_utf8(res.stdout).unwrap());
+        println!("stderr:\n {}\n", String::from_utf8(res.stderr).unwrap());
+    }
 }
