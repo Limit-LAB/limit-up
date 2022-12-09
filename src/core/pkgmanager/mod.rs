@@ -37,6 +37,10 @@ impl_pkg_manager!(Dnf, "dnf", "install", "remove", "-y");
 impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "--noconfirm");
 #[cfg(target_family = "unix")]
 impl_pkg_manager!(Zypper, "zypper", "install", "remove", "-y");
+#[cfg(target_family = "unix")]
+impl_pkg_manager!(Apk, "apk", "add", "del", ""); // apk does not need
+#[cfg(target_family = "unix")]
+impl_pkg_manager!(Brew, "brew", "install", "remove", ""); // seems brew doesn't support -y
 
 #[derive(Debug)]
 pub enum Error {
