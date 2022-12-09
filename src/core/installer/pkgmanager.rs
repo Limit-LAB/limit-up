@@ -1,7 +1,9 @@
 use std::{
-    io::Write,
+    io::{ErrorKind, Read, Write},
     process::{Child, Command, Stdio},
 };
+
+use super::{Error, Result};
 
 trait PkgManager {
     fn install(&self, pkgs: &str) -> String;
@@ -10,16 +12,22 @@ trait PkgManager {
 }
 
 macro_rules! impl_pkg_manager {
-    ($class:ident, $name:expr, $install:expr, $uninstall:expr, $($flag:expr),*) => {
+    ($class:ident, $name:expr, $install:expr, $uninstall:expr, $flag:expr) => {
         pub struct $class;
 
         impl PkgManager for $class {
             fn install(&self, pkgs: &str) -> String {
-                format!(concat!($name, " ", $install, " {} ", $($flag),*, " && exit\n"), pkgs)
+                format!(
+                    concat!($name, " ", $install, " {} ", $flag, " && exit\n"),
+                    pkgs
+                )
             }
 
             fn uninstall(&self, pkgs: &str) -> String {
-                format!(concat!($name, " ", $uninstall, " {} ", $($flag),*, " && exit\n"), pkgs)
+                format!(
+                    concat!($name, " ", $uninstall, " {} ", $flag, " && exit\n"),
+                    pkgs
+                )
             }
 
             fn name(&self) -> &'static str {
@@ -37,59 +45,12 @@ impl_pkg_manager!(Dnf, "dnf", "install", "remove", "-y");
 impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "--noconfirm");
 #[cfg(target_family = "unix")]
 impl_pkg_manager!(Zypper, "zypper", "install", "remove", "-y");
-
-#[derive(Debug)]
-pub enum Error {
-    IoError(std::io::Error),
-    NotSupported,
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::IoError(e)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Error::IoError(ref e) => write!(f, "{}", e),
-            Error::NotSupported => write!(f, "Unsupported package manager or platform"),
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+#[cfg(target_family = "unix")]
+impl_pkg_manager!(Apk, "apk", "add", "del", ""); // apk does not need
 
 macro_rules! boxed_mgrs {
     ($($mgr:ident),+) => {
         vec![$(Box::new($mgr {})),+]
-    };
-}
-
-macro_rules! clear_pipe {
-    ($pipe:expr, $buf:expr) => {
-        loop {
-            let output = $pipe.as_mut().unwrap();
-            output.read(&mut $buf).unwrap();
-
-            let mut fdset = FdSet::new();
-            fdset.insert(output.as_raw_fd());
-            let ret = select(
-                output.as_raw_fd() + 1,
-                &mut fdset,
-                None,
-                None,
-                &mut TimeVal::milliseconds(0),
-            );
-            match ret {
-                Ok(ret) if ret == 0 => break,
-                Err(e) => return Err(Error::IoError(e.into())),
-                _ => {}
-            };
-        }
     };
 }
 
@@ -101,10 +62,7 @@ pub struct PackageManager {
 impl PackageManager {
     #[cfg(target_family = "unix")]
     pub fn new_with_passwd(passwd: impl AsRef<str>) -> Result<PackageManager> {
-        use std::{
-            io::{ErrorKind, Read},
-            os::fd::AsRawFd,
-        };
+        use std::os::fd::AsRawFd;
 
         use nix::{
             sys::{
@@ -121,43 +79,45 @@ impl PackageManager {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // authorization
-        if !Uid::effective().is_root() {
+        let mut buf = [0; 16];
+
+        if !passwd.as_ref().is_empty() && !Uid::effective().is_root() {
             root_proc
                 .stdin
                 .as_mut()
                 .unwrap()
-                .write_all(format!("{}\n", passwd.as_ref()).as_bytes())
-                .map_err(|e| Error::IoError(e))?;
+                .write_all(format!("{}\n", passwd.as_ref()).as_bytes())?;
 
-            let mut buf: [u8; 16] = [0; 16];
-            clear_pipe!(root_proc.stderr, buf);
+            root_proc.stderr.as_mut().unwrap().read(&mut buf)?;
+            while try_read!(root_proc.stderr, buf)? != 0 {}
+        }
 
-            root_proc
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(b"whoami\n")
-                .unwrap();
+        loop {
+            root_proc.stdin.as_mut().unwrap().write_all(b"whoami\n")?;
 
-            loop {
-                let mut fdset = FdSet::new();
-                fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
-                fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
+            let mut fdset = FdSet::new();
+            fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
+            fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
 
-                select(fdset.highest().unwrap() + 1, &mut fdset, None, None, None)
-                    .map_err(|e| Error::IoError(e.into()))?;
+            select(
+                fdset.highest().unwrap() + 1,
+                &mut fdset,
+                None,
+                None,
+                &mut TimeVal::seconds(5),
+            )
+            .map_err(|e| Error::IoError(e.into()))?;
 
-                if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
-                    clear_pipe!(root_proc.stdout, buf);
-                    break;
-                } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
-                    return Err(Error::IoError(ErrorKind::PermissionDenied.into()));
-                }
+            if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
+                root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
+                break;
+            } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
+                return Err(Error::IoError(ErrorKind::PermissionDenied.into()));
             }
         }
 
-        let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> = boxed_mgrs![Apt, Dnf, Pacman, Zypper];
+        let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> =
+            boxed_mgrs![Apt, Dnf, Pacman, Zypper, Apk];
 
         mgrs.into_iter()
             .find(|mgr| Command::new(mgr.name()).output().is_ok())
@@ -247,7 +207,7 @@ mod tests {
             .wait_with_output()
             .unwrap();
 
-        println!("\nuninstall: {}", res.status);
+        println!("uninstall: {}", res.status);
         println!("stdout:\n{}\n", String::from_utf8(res.stdout).unwrap());
         println!("stderr:\n{}\n", String::from_utf8(res.stderr).unwrap());
     }

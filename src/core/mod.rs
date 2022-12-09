@@ -1,1 +1,1 @@
-mod_use::mod_use!(pkgmanager);
+pub mod installer;
