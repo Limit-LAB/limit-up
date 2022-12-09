@@ -1,4 +1,9 @@
-mod_use::mod_use!(install, widgets, frontend);
+mod frontend;
+mod install;
+mod widgets;
+
+use frontend::init_frontend_ui;
+use install::{init_install_ui};
 
 use cursive::{
     theme::{BaseColor::*, Color::*, PaletteColor::*},
@@ -11,9 +16,7 @@ static LOGO: &'static str = r#"|      _)            _)  |
   _____| _| _|  _|  _| _| \__|"#;
 
 #[derive(Debug, Default)]
-struct UserData {
-    install: InstallConfig,
-}
+struct UserData {}
 
 pub struct Ui {
     ui: Cursive,

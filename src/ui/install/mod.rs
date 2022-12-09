@@ -2,12 +2,7 @@ mod_use::mod_use!(welcome, install);
 
 use cursive::{traits::*, views::DummyView, Cursive};
 
-use crate::StepTabs;
-
-#[derive(Debug, Default)]
-pub struct InstallConfig {
-    sql: String,
-}
+use super::widgets::StepTabs;
 
 pub fn init_install_ui(ui: &mut Cursive) {
     let tab = StepTabs::new()

@@ -1,9 +1,10 @@
 use cursive::{
     theme::BaseColor,
     traits::*,
+    utils::markup::StyledString,
     views::{
         Button, Dialog, DummyView, HideableView, LinearLayout, NamedView, Panel, ProgressBar,
-        ResizedView, ScrollView, SelectView, TextView,
+        ResizedView, ScrollView, TextView,
     },
     Cursive,
 };
@@ -19,7 +20,6 @@ pub fn install() -> NamedView<impl View> {
                         .style(BaseColor::Cyan.light())
                         .full_height(),
                 )
-                .child(DummyView {})
                 .child(
                     TextView::new("Hello")
                         .scrollable()
@@ -44,7 +44,7 @@ pub fn install() -> NamedView<impl View> {
                         })),
                 )
                 .child(DummyView {})
-                .child(ProgressBar::new().with(|p| p.set_value(10)))
+                .child(ProgressBar::new().with_name("install_progress"))
                 .child(DummyView {}.fixed_height(2))
                 .full_width(),
         )
@@ -52,28 +52,4 @@ pub fn install() -> NamedView<impl View> {
         .full_screen()
         .wrap_with(|layout| HideableView::new(layout).hidden())
         .with_name("Install")
-}
-
-pub fn install_config_dialog() -> Dialog {
-    Dialog::around(
-        LinearLayout::vertical()
-            .child(
-                SelectView::new()
-                    .item("SQLite", "sqlite")
-                    .item("MySQL", "mysql")
-                    .item("PostgreSQL", "postgresql")
-                    .item("Remote SQL (Don't install)", "")
-                    .on_submit(|ui, sql: &str| {
-                        ui.user_data::<crate::ui::UserData>().unwrap().install.sql =
-                            sql.to_string();
-
-                        ui.pop_layer();
-                        ui.find_name::<HideableView<ResizedView<LinearLayout>>>("Install")
-                            .unwrap()
-                            .unhide();
-                    }),
-            )
-            .child(TextView::new("\nPress <Enter> to submit")),
-    )
-    .title("Choose the SQL you want")
 }

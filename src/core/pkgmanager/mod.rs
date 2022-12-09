@@ -1,13 +1,11 @@
 use std::{
+    io::Write,
     process::{Child, Command, Stdio},
-    sync::Arc,
 };
 
-use once_cell::sync::Lazy;
-
 trait PkgManager {
-    fn install(&self, pkg: &str) -> std::io::Result<Child>;
-    fn uninstall(&self, pkg: &str) -> std::io::Result<Child>;
+    fn install(&self, pkgs: &str) -> String;
+    fn uninstall(&self, pkgs: &str) -> String;
     fn name(&self) -> &'static str;
 }
 
@@ -16,20 +14,12 @@ macro_rules! impl_pkg_manager {
         pub struct $class;
 
         impl PkgManager for $class {
-            fn install(&self, pkg: &str) -> std::io::Result<Child> {
-                Command::new($name)
-                    .args(vec![$install.into(), pkg, $($flag),*])
-                    .stderr(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .spawn()
+            fn install(&self, pkgs: &str) -> String {
+                format!(concat!($name, " ", $install, " {} ", $($flag),*, " && exit\n"), pkgs)
             }
 
-            fn uninstall(&self, pkg: &str) -> std::io::Result<Child> {
-                Command::new($name)
-                    .args(vec![$uninstall.into(), pkg, $($flag),*])
-                    .stderr(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .spawn()
+            fn uninstall(&self, pkgs: &str) -> String {
+                format!(concat!($name, " ", $uninstall, " {} ", $($flag),*, " && exit\n"), pkgs)
             }
 
             fn name(&self) -> &'static str {
@@ -48,11 +38,16 @@ impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "--noconfirm");
 #[cfg(target_family = "unix")]
 impl_pkg_manager!(Zypper, "zypper", "install", "remove", "-y");
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Error {
-    IoError(Arc<std::io::Error>),
-    PermissionDenied,
+    IoError(std::io::Error),
     NotSupported,
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
 }
 
 impl std::error::Error for Error {}
@@ -60,15 +55,13 @@ impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Error::IoError(ref e) => write!(f, "I/O error: {}", e),
-            Error::PermissionDenied => write!(
-                f,
-                "Permission denied, please rerun as root or administrator"
-            ),
+            Error::IoError(ref e) => write!(f, "{}", e),
             Error::NotSupported => write!(f, "Unsupported package manager or platform"),
         }
     }
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 macro_rules! boxed_mgrs {
     ($($mgr:ident),+) => {
@@ -76,78 +69,186 @@ macro_rules! boxed_mgrs {
     };
 }
 
-type PkgManagerFactory = Result<Box<dyn PkgManager + Send + Sync>, Error>;
+macro_rules! clear_pipe {
+    ($pipe:expr, $buf:expr) => {
+        loop {
+            let output = $pipe.as_mut().unwrap();
+            output.read(&mut $buf).unwrap();
 
-static PKG_MANAGER: Lazy<PkgManagerFactory> = Lazy::new(init_pkg_manager);
+            let mut fdset = FdSet::new();
+            fdset.insert(output.as_raw_fd());
+            let ret = select(
+                output.as_raw_fd() + 1,
+                &mut fdset,
+                None,
+                None,
+                &mut TimeVal::milliseconds(0),
+            );
+            match ret {
+                Ok(ret) if ret == 0 => break,
+                Err(e) => return Err(Error::IoError(e.into())),
+                _ => {}
+            };
+        }
+    };
+}
 
-fn init_pkg_manager() -> PkgManagerFactory {
+pub struct PackageManager {
+    mgr: Box<dyn PkgManager + Send + Sync>,
+    proc: Child,
+}
+
+impl PackageManager {
     #[cfg(target_family = "unix")]
-    let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> = boxed_mgrs![Apt, Dnf, Pacman, Zypper];
+    pub fn new_with_passwd(passwd: impl AsRef<str>) -> Result<PackageManager> {
+        use std::{
+            io::{ErrorKind, Read},
+            os::fd::AsRawFd,
+        };
 
-    #[cfg(target_family = "unix")]
-    return mgrs
-        .into_iter()
-        .find(|mgr| Command::new(mgr.name()).output().is_ok())
-        .ok_or(Error::NotSupported)
-        .and_then(|mgr| match unsafe { libc::geteuid() } {
-            0 => Ok(mgr),
-            _ => Err(Error::PermissionDenied),
-        });
+        use nix::{
+            sys::{
+                select::{select, FdSet},
+                time::{TimeVal, TimeValLike},
+            },
+            unistd::Uid,
+        };
 
-    #[cfg(not(target_family = "unix"))]
-    Err(Error::NotSupported)
+        let mut root_proc = Command::new("/usr/bin/su")
+            .args(["-s", "/usr/bin/bash"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // authorization
+        if !Uid::effective().is_root() {
+            root_proc
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(format!("{}\n", passwd.as_ref()).as_bytes())
+                .map_err(|e| Error::IoError(e))?;
+
+            let mut buf: [u8; 16] = [0; 16];
+            clear_pipe!(root_proc.stderr, buf);
+
+            root_proc
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(b"whoami\n")
+                .unwrap();
+
+            loop {
+                let mut fdset = FdSet::new();
+                fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
+                fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
+
+                select(fdset.highest().unwrap() + 1, &mut fdset, None, None, None)
+                    .map_err(|e| Error::IoError(e.into()))?;
+
+                if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
+                    clear_pipe!(root_proc.stdout, buf);
+                    break;
+                } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
+                    return Err(Error::IoError(ErrorKind::PermissionDenied.into()));
+                }
+            }
+        }
+
+        let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> = boxed_mgrs![Apt, Dnf, Pacman, Zypper];
+
+        mgrs.into_iter()
+            .find(|mgr| Command::new(mgr.name()).output().is_ok())
+            .map(|mgr| PackageManager {
+                mgr,
+                proc: root_proc,
+            })
+            .ok_or(Error::NotSupported)
+    }
+
+    pub fn install(mut self, pkgs: impl IntoIterator<Item = impl Into<String>>) -> Result<Child> {
+        self.proc
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(
+                self.mgr
+                    .install(
+                        pkgs.into_iter()
+                            .map(|p| p.into())
+                            .collect::<Vec<String>>()
+                            .join(" ")
+                            .as_str(),
+                    )
+                    .as_bytes(),
+            )
+            .map_err(|e| Error::IoError(e))?;
+
+        Ok(self.proc)
+    }
+
+    pub fn uninstall(mut self, pkgs: impl IntoIterator<Item = impl Into<String>>) -> Result<Child> {
+        self.proc
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(
+                self.mgr
+                    .uninstall(
+                        pkgs.into_iter()
+                            .map(|p| p.into())
+                            .collect::<Vec<String>>()
+                            .join(" ")
+                            .as_str(),
+                    )
+                    .as_bytes(),
+            )
+            .map_err(|e| Error::IoError(e))?;
+
+        Ok(self.proc)
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.mgr.name()
+    }
 }
 
-pub fn install(pkg: impl AsRef<str>) -> Result<Child, Error> {
-    PKG_MANAGER.as_ref().map_err(|e| e.clone()).and_then(|mgr| {
-        mgr.install(pkg.as_ref())
-            .map_err(|e| Error::IoError(Arc::new(e)))
-    })
-}
-
-pub fn uninstall(pkg: impl AsRef<str>) -> Result<Child, Error> {
-    PKG_MANAGER.as_ref().map_err(|e| e.clone()).and_then(|mgr| {
-        mgr.uninstall(pkg.as_ref())
-            .map_err(|e| Error::IoError(Arc::new(e)))
-    })
-}
-
-pub fn name() -> Result<&'static str, Error> {
-    PKG_MANAGER
-        .as_ref()
-        .map(|mgr| mgr.name())
-        .map_err(|e| e.clone())
-}
-
-// Please run the test as administrator serial
 #[cfg(test)]
-mod tests {    
-    #[test]
-    fn name() {
-        println!("package manager: {}", super::name().unwrap());
-    }
+mod tests {
+    use std::env;
+
+    use super::PackageManager;
 
     #[test]
-    fn install() {
-        let res = super::install("cowsay")
+    fn pkgmgr_test() {
+        let passwd = env::var("PASSWD").unwrap_or_default();
+
+        let res = PackageManager::new_with_passwd(&passwd)
+            .map(|mgr| {
+                println!("package manager: {}", mgr.name());
+                mgr
+            })
+            .unwrap()
+            .install(["cowsay"])
             .unwrap()
             .wait_with_output()
             .unwrap();
 
-        println!("{}", res.status);
-        println!("stdout:\n {}\n", String::from_utf8(res.stdout).unwrap());
-        println!("stderr:\n {}\n", String::from_utf8(res.stderr).unwrap());
-    }
+        println!("install: {}", res.status);
+        println!("stdout:\n{}\n", String::from_utf8(res.stdout).unwrap());
+        println!("stderr:\n{}\n", String::from_utf8(res.stderr).unwrap());
 
-    #[test]
-    fn uninstall() {
-        let res = super::uninstall("cowsay")
+        let res = PackageManager::new_with_passwd(&passwd)
+            .unwrap()
+            .uninstall(["cowsay"])
             .unwrap()
             .wait_with_output()
             .unwrap();
 
-        println!("{}", res.status);
-        println!("stdout:\n {}\n", String::from_utf8(res.stdout).unwrap());
-        println!("stderr:\n {}\n", String::from_utf8(res.stderr).unwrap());
+        println!("\nuninstall: {}", res.status);
+        println!("stdout:\n{}\n", String::from_utf8(res.stdout).unwrap());
+        println!("stderr:\n{}\n", String::from_utf8(res.stderr).unwrap());
     }
 }

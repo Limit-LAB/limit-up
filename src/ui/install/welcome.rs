@@ -1,17 +1,19 @@
 use cursive::{
-    theme::{BaseColor, Style},
+    theme::BaseColor,
     traits::*,
     utils::markup::StyledString,
-    view::{Nameable},
+    view::Nameable,
     views::{Button, DummyView, LinearLayout, NamedView, TextView},
 };
 
-use crate::StepTabs;
+use super::StepTabs;
 
 pub fn welcome() -> NamedView<impl View> {
-    let mut logo = StyledString::styled(crate::ui::LOGO, Style::from(BaseColor::Cyan.light()));
-    logo.append_plain("\n\nWelcome to Limit up
-A CLI tool that helps you to setup limit-server :)");
+    let mut logo = StyledString::styled(crate::ui::LOGO, BaseColor::Cyan.light());
+    logo.append_plain(
+        "\n\nWelcome to Limit up
+A CLI tool that helps you to setup limit-server :)",
+    );
 
     LinearLayout::vertical()
         .child(TextView::new(logo).center().full_screen())
@@ -21,7 +23,6 @@ A CLI tool that helps you to setup limit-server :)");
                 .child(DummyView {}.full_width())
                 .child(Button::new_raw("[ Next ]", |ui| {
                     ui.find_name::<StepTabs>("steptabs").unwrap().next();
-                    ui.add_layer(super::install_config_dialog());
                 }))
                 .with(|layout| {
                     layout.set_focus_index(2).unwrap();
