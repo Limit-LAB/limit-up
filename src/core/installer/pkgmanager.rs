@@ -12,20 +12,35 @@ trait PkgManager {
 }
 
 macro_rules! impl_pkg_manager {
-    ($class:ident, $name:expr, $install:expr, $uninstall:expr, $flag:expr) => {
+    ($class:ident, $name:expr, $install:expr, $uninstall:expr, $update:expr, $flags:expr) => {
         pub struct $class;
 
         impl PkgManager for $class {
             fn install(&self, pkgs: &str) -> String {
+                // {pkgmgr} {update} {flags} && {pkgmgr} {install} {flags} <pkg> && exit
                 format!(
-                    concat!($name, " ", $install, " {} ", $flag, " && exit\n"),
+                    concat!(
+                        $name,
+                        " ",
+                        $update,
+                        " ",
+                        $flags,
+                        " && ",
+                        $name,
+                        " ",
+                        $install,
+                        " ",
+                        $flags,
+                        " {} && exit\n"
+                    ),
                     pkgs
                 )
             }
 
             fn uninstall(&self, pkgs: &str) -> String {
+                // {pkgmgr} {uninstall} {flags} <pkg> && exit
                 format!(
-                    concat!($name, " ", $uninstall, " {} ", $flag, " && exit\n"),
+                    concat!($name, " ", $uninstall, " ", $flags, " {} && exit\n"),
                     pkgs
                 )
             }
@@ -38,15 +53,15 @@ macro_rules! impl_pkg_manager {
 }
 
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Apt, "apt", "install", "remove", "-y");
+impl_pkg_manager!(Apt, "apt", "install", "remove", "update", "-y");
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Dnf, "dnf", "install", "remove", "-y");
+impl_pkg_manager!(Dnf, "dnf", "install", "remove", "update", "-y");
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "--noconfirm");
+impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "-Sy", "--noconfirm");
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Zypper, "zypper", "install", "remove", "-y");
+impl_pkg_manager!(Zypper, "zypper", "install", "remove", "update", "-y");
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Apk, "apk", "add", "del", ""); // apk does not need
+impl_pkg_manager!(Apk, "apk", "add", "del", "update", ""); // apk does not need
 
 macro_rules! boxed_mgrs {
     ($($mgr:ident),+) => {
