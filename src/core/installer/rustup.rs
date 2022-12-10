@@ -1,8 +1,17 @@
-use std::process::{Child, Command, Stdio};
+use std::{
+    env,
+    process::{Child, Command, Stdio},
+};
 
 use super::Result;
 
 pub struct Rustup;
+
+#[cfg(target_family = "windows")]
+const DELIMITER: char = ';';
+
+#[cfg(target_family = "unix")]
+const DELIMITER: char = ':';
 
 impl Rustup {
     #[cfg(target_family = "windows")]
@@ -29,8 +38,18 @@ impl Rustup {
     }
 
     pub fn uninstall() -> Result<Child> {
+        let mut path = env::var("PATH")
+            .map(|mut p| {
+                p.push(DELIMITER);
+                p
+            })
+            .unwrap_or_default();
+
+        path.push_str("~/.cargo/bin");
+
         let proc = Command::new("rustup")
-            .args(["self", "uninstall"])
+            .env("PATH", path)
+            .args(["self", "uninstall", "-y"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
