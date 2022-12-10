@@ -3,7 +3,7 @@ use std::{
     process::{Child, Command, Stdio},
 };
 
-use super::Result;
+use super::{Error, ErrorKind, Result};
 
 pub struct Rustup;
 
@@ -21,18 +21,34 @@ impl Rustup {
 
     #[cfg(target_family = "unix")]
     pub fn install() -> Result<Child> {
-        use std::io::Write;
-
-        let mut proc = Command::new("/usr/bin/bash")
-            .args(["-s", "--", "-y", "--default-toolchain", "none"])
-            .stdin(Stdio::piped())
+        let mut curl = Command::new("curl")
+            .args([
+                "--proto",
+                "=https",
+                "-tlsv1.2",
+                "-sSf",
+                "https://sh.rustup.rs",
+            ])
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let resp = reqwest::blocking::get("https://sh.rustup.rs")?.bytes()?;
+        let proc = Command::new("/usr/bin/bash")
+            .args(["-s", "--", "-y", "--default-toolchain", "none"])
+            .stdin(curl.stdout.take().unwrap())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
-        proc.stdin.take().unwrap().write_all(&resp)?;
+        let curl_res = curl.wait_with_output()?;
+
+        if !curl_res.status.success() {
+            return Err(Error::new(
+                ErrorKind::Other,
+                String::from_utf8(curl_res.stderr.into()).unwrap(),
+            ));
+        }
 
         Ok(proc)
     }
