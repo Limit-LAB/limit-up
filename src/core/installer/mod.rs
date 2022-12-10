@@ -22,37 +22,8 @@ macro_rules! try_read {
     }};
 }
 
-#[derive(Debug)]
-pub enum Error {
-    IoError(std::io::Error),
-    NetworkError(reqwest::Error),
-    NotSupported,
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::IoError(e)
-    }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Self::NetworkError(e)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Error::IoError(ref e) => write!(f, "{}", e),
-            Error::NetworkError(ref e) => write!(f, "{}", e),
-            Error::NotSupported => write!(f, "Unsupported platform"),
-        }
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Error = std::io::Error;
+pub type ErrorKind = std::io::ErrorKind;
+pub type Result<T> = std::io::Result<T>;
 
 mod_use::mod_use!(pkgmanager, rustup);

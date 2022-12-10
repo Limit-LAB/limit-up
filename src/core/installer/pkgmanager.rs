@@ -121,13 +121,13 @@ impl PackageManager {
                 None,
                 &mut TimeVal::seconds(5),
             )
-            .map_err(|e| Error::IoError(e.into()))?;
+            .map_err(|e| Error::from(e))?;
 
             if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
                 root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
                 break;
             } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
-                return Err(Error::IoError(ErrorKind::PermissionDenied.into()));
+                return Err(ErrorKind::PermissionDenied.into());
             }
         }
 
@@ -140,7 +140,7 @@ impl PackageManager {
                 mgr,
                 proc: root_proc,
             })
-            .ok_or(Error::NotSupported)
+            .ok_or(ErrorKind::Unsupported.into())
     }
 
     pub fn install(mut self, pkgs: impl IntoIterator<Item = impl Into<String>>) -> Result<Child> {
@@ -158,8 +158,7 @@ impl PackageManager {
                             .as_str(),
                     )
                     .as_bytes(),
-            )
-            .map_err(|e| Error::IoError(e))?;
+            )?;
 
         Ok(self.proc)
     }
@@ -179,8 +178,7 @@ impl PackageManager {
                             .as_str(),
                     )
                     .as_bytes(),
-            )
-            .map_err(|e| Error::IoError(e))?;
+            )?;
 
         Ok(self.proc)
     }
