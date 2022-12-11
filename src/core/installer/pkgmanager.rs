@@ -53,7 +53,7 @@ macro_rules! impl_pkg_manager {
 }
 
 #[cfg(target_family = "unix")]
-impl_pkg_manager!(Apt, "apt", "install", "remove", "update", "-y");
+impl_pkg_manager!(Apt, "apt-get", "install", "remove", "update", "-y");
 #[cfg(target_family = "unix")]
 impl_pkg_manager!(Dnf, "dnf", "install", "remove", "update", "-y");
 #[cfg(target_family = "unix")]
@@ -87,55 +87,65 @@ impl PackageManager {
             unistd::Uid,
         };
 
-        let mut root_proc = Command::new("/usr/bin/su")
-            .args(["-s", "/usr/bin/bash"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let root_proc = if Uid::effective().is_root() {
+            Command::new("sh")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?
+        } else {
+            let mut root_proc = Command::new("su")
+                .args(["-c", "sh"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
 
-        let mut buf = [0; 16];
+            let mut buf = [0; 16];
 
-        if !passwd.as_ref().is_empty() && !Uid::effective().is_root() {
-            root_proc
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(format!("{}\n", passwd.as_ref()).as_bytes())?;
+            if !passwd.as_ref().is_empty() {
+                root_proc
+                    .stdin
+                    .as_mut()
+                    .unwrap()
+                    .write_all(format!("{}\n", passwd.as_ref()).as_bytes())?;
 
-            root_proc.stderr.as_mut().unwrap().read(&mut buf)?;
-            while try_read!(root_proc.stderr, buf)? != 0 {}
-        }
-
-        loop {
-            root_proc.stdin.as_mut().unwrap().write_all(b"whoami\n")?;
-
-            let mut fdset = FdSet::new();
-            fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
-            fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
-
-            select(
-                fdset.highest().unwrap() + 1,
-                &mut fdset,
-                None,
-                None,
-                &mut TimeVal::seconds(5),
-            )
-            .map_err(|e| Error::from(e))?;
-
-            if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
-                root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
-                break;
-            } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
-                return Err(ErrorKind::PermissionDenied.into());
+                root_proc.stderr.as_mut().unwrap().read(&mut buf)?;
+                while try_read!(root_proc.stderr, buf)? != 0 {}
             }
-        }
+
+            loop {
+                root_proc.stdin.as_mut().unwrap().write_all(b"whoami\n")?;
+
+                let mut fdset = FdSet::new();
+                fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
+                fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
+
+                select(
+                    fdset.highest().unwrap() + 1,
+                    &mut fdset,
+                    None,
+                    None,
+                    &mut TimeVal::seconds(5),
+                )
+                .map_err(|e| Error::from(e))?;
+
+                if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
+                    root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
+                    break;
+                } else if fdset.contains(root_proc.stderr.as_ref().unwrap().as_raw_fd()) {
+                    return Err(ErrorKind::PermissionDenied.into());
+                }
+            }
+
+            root_proc
+        };
 
         let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> =
             boxed_mgrs![Apt, Dnf, Pacman, Zypper, Apk];
 
         mgrs.into_iter()
-            .find(|mgr| Command::new(mgr.name()).output().is_ok())
+            .find(|mgr| super::command_exists(mgr.name()))
             .map(|mgr| PackageManager {
                 mgr,
                 proc: root_proc,
@@ -144,41 +154,33 @@ impl PackageManager {
     }
 
     pub fn install(mut self, pkgs: impl IntoIterator<Item = impl Into<String>>) -> Result<Child> {
-        self.proc
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(
-                self.mgr
-                    .install(
-                        pkgs.into_iter()
-                            .map(|p| p.into())
-                            .collect::<Vec<String>>()
-                            .join(" ")
-                            .as_str(),
-                    )
-                    .as_bytes(),
-            )?;
+        self.proc.stdin.take().unwrap().write_all(
+            self.mgr
+                .install(
+                    pkgs.into_iter()
+                        .map(|p| p.into())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                        .as_str(),
+                )
+                .as_bytes(),
+        )?;
 
         Ok(self.proc)
     }
 
     pub fn uninstall(mut self, pkgs: impl IntoIterator<Item = impl Into<String>>) -> Result<Child> {
-        self.proc
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(
-                self.mgr
-                    .uninstall(
-                        pkgs.into_iter()
-                            .map(|p| p.into())
-                            .collect::<Vec<String>>()
-                            .join(" ")
-                            .as_str(),
-                    )
-                    .as_bytes(),
-            )?;
+        self.proc.stdin.take().unwrap().write_all(
+            self.mgr
+                .uninstall(
+                    pkgs.into_iter()
+                        .map(|p| p.into())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                        .as_str(),
+                )
+                .as_bytes(),
+        )?;
 
         Ok(self.proc)
     }

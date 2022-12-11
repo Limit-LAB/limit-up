@@ -24,11 +24,9 @@ macro_rules! try_read {
     }};
 }
 
-pub fn command_exists(program: impl AsRef<str>, arg: impl AsRef<str>) -> bool {
-    Command::new(program.as_ref())
-        .arg(arg.as_ref())
-        .output()
-        .is_ok()
+#[inline]
+pub fn command_exists(program: impl AsRef<str>) -> bool {
+    Command::new(program.as_ref()).output().is_ok()
 }
 
 pub type Error = std::io::Error;

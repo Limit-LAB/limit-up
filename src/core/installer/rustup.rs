@@ -34,7 +34,7 @@ impl Rustup {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let proc = Command::new("/usr/bin/bash")
+        let proc = Command::new("sh")
             .args(["-s", "--", "-y", "--default-toolchain", "none"])
             .stdin(curl.stdout.take().unwrap())
             .stdout(Stdio::piped())
@@ -88,17 +88,21 @@ mod tests {
 
     #[test]
     fn rustup_test() {
-        if !command_exists("curl", "-V") {
-            PackageManager::new_with_passwd(env::var("PASSWD").unwrap_or_default())
+        if !command_exists("curl") {
+            let res = PackageManager::new_with_passwd(env::var("PASSWD").unwrap_or_default())
                 .unwrap()
                 .install(["curl"])
                 .unwrap()
                 .wait_with_output()
-                .unwrap()
-                .status
-                .success()
-                .then_some(())
                 .unwrap();
+
+            println!("install curl: {}", res.status);
+            println!("stdout:\n{}\n", String::from_utf8(res.stdout).unwrap());
+            println!("stderr:\n{}\n", String::from_utf8(res.stderr).unwrap());
+
+            if !res.status.success() {
+                panic!("install curl failed");
+            }
         }
 
         let res = Rustup::install().unwrap().wait_with_output().unwrap();
