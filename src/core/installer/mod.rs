@@ -1,3 +1,5 @@
+use std::process::Command;
+
 #[macro_export]
 macro_rules! try_read {
     ($pipe:expr, $buf:expr) => {{
@@ -20,6 +22,13 @@ macro_rules! try_read {
             _ => unreachable!(),
         })
     }};
+}
+
+pub fn command_exists(program: impl AsRef<str>, arg: impl AsRef<str>) -> bool {
+    Command::new(program.as_ref())
+        .arg(arg.as_ref())
+        .output()
+        .is_ok()
 }
 
 pub type Error = std::io::Error;

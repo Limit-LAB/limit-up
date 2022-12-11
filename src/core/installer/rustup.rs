@@ -61,7 +61,10 @@ impl Rustup {
             })
             .unwrap_or_default();
 
-        path.push_str("~/.cargo/bin");
+        path.push_str(&format!(
+            "{}/.cargo/bin",
+            env::var("HOME").map_err(|_| Error::new(ErrorKind::NotFound, "Invalid home path"))?
+        ));
 
         let proc = Command::new("rustup")
             .env("PATH", path)
@@ -77,10 +80,27 @@ impl Rustup {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
+    use crate::core::installer::{command_exists, PackageManager};
+
     use super::Rustup;
 
     #[test]
     fn rustup_test() {
+        if !command_exists("curl", "-V") {
+            PackageManager::new_with_passwd(env::var("PASSWD").unwrap_or_default())
+                .unwrap()
+                .install(["curl"])
+                .unwrap()
+                .wait_with_output()
+                .unwrap()
+                .status
+                .success()
+                .then_some(())
+                .unwrap();
+        }
+
         let res = Rustup::install().unwrap().wait_with_output().unwrap();
 
         println!("install: {}", res.status);
