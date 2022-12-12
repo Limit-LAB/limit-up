@@ -23,6 +23,7 @@ A CLI tool that helps you to setup limit-server :)",
                 .child(DummyView {}.full_width())
                 .child(Button::new_raw("[ Next ]", |ui| {
                     ui.find_name::<StepTabs>("steptabs").unwrap().next();
+                    super::prepare_install(ui);
                 }))
                 .with(|layout| {
                     layout.set_focus_index(2).unwrap();

@@ -1,1 +1,1 @@
-mod_use::mod_use!(steptabs);
+mod_use::mod_use!(step_tabs);

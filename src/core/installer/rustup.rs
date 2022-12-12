@@ -80,15 +80,15 @@ impl Rustup {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
+    use std::{env, iter::empty};
 
-    use crate::core::installer::{command_exists, PackageManager};
+    use crate::core::installer::{find_command, PackageManager};
 
     use super::Rustup;
 
     #[test]
     fn rustup_test() {
-        if !command_exists("curl") {
+        if find_command("curl", empty::<&str>()).is_empty() {
             let res = PackageManager::new_with_passwd(env::var("PASSWD").unwrap_or_default())
                 .unwrap()
                 .install(["curl"])

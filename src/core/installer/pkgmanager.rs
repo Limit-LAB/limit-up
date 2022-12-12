@@ -77,7 +77,7 @@ pub struct PackageManager {
 impl PackageManager {
     #[cfg(target_family = "unix")]
     pub fn new_with_passwd(passwd: impl AsRef<str>) -> Result<PackageManager> {
-        use std::os::fd::AsRawFd;
+        use std::{iter::empty, os::fd::AsRawFd};
 
         use nix::{
             sys::{
@@ -145,7 +145,7 @@ impl PackageManager {
             boxed_mgrs![Apt, Dnf, Pacman, Zypper, Apk];
 
         mgrs.into_iter()
-            .find(|mgr| super::command_exists(mgr.name()))
+            .find(|mgr| !super::find_command(mgr.name(), empty::<&str>()).is_empty())
             .map(|mgr| PackageManager {
                 mgr,
                 proc: root_proc,

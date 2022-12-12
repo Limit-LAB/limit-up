@@ -23,7 +23,7 @@ impl StepTabs {
                 .child(TextView::new("").full_width())
                 .child(ScreensView::<BoxedView>::new().full_screen())
                 .wrap_with(|layout| PaddedView::lrtb(1, 1, 0, 0, layout))
-                .wrap_with(|layout| Panel::new(layout)),
+                .wrap_with(Panel::new),
         }
     }
 

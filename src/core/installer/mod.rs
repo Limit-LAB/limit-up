@@ -1,4 +1,7 @@
-use std::process::Command;
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 #[macro_export]
 macro_rules! try_read {
@@ -25,8 +28,26 @@ macro_rules! try_read {
 }
 
 #[inline]
-pub fn command_exists(program: impl AsRef<str>) -> bool {
-    Command::new(program.as_ref()).output().is_ok()
+pub fn find_command(
+    program: impl AsRef<Path>,
+    other: impl IntoIterator<Item = impl Into<PathBuf>>,
+) -> Vec<PathBuf> {
+    env::var_os("PATH")
+        .map(|paths| {
+            env::split_paths(&paths)
+                .chain(other.into_iter().map(|p| p.into()))
+                .filter_map(|path| {
+                    #[cfg(target_family = "windows")]
+                    let full_path = path.join(format!("{}.exe", program.as_ref().display()));
+
+                    #[cfg(target_family = "unix")]
+                    let full_path = path.join(program.as_ref());
+
+                    full_path.is_file().then_some(full_path)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub type Error = std::io::Error;
