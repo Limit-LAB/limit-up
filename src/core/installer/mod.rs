@@ -4,26 +4,37 @@ use std::{
 };
 
 #[macro_export]
-macro_rules! try_read {
-    ($pipe:expr, $buf:expr) => {{
-        let output = $pipe.as_mut().unwrap();
-
+macro_rules! select {
+    ($($pipe:expr),+; $timeout:expr) => {{
         let mut fdset = FdSet::new();
-        fdset.insert(output.as_raw_fd());
+        $(
+            fdset.insert($pipe.as_ref().unwrap().as_raw_fd());
+        )+
+
         select(
-            output.as_raw_fd() + 1,
+            fdset.highest().unwrap() + 1,
             &mut fdset,
             None,
             None,
-            &mut TimeVal::milliseconds(0),
+            &mut TimeVal::milliseconds($timeout),
         )
-        .map(|ret| ret as usize)
-        .map_err(|e| e.into())
-        .and_then(|ret| match ret {
-            0 => Ok(0),
-            1 => output.read(&mut $buf),
-            _ => unreachable!(),
-        })
+        .map(|_| fdset)
+    }}
+}
+
+#[macro_export]
+macro_rules! try_read {
+    ($pipe:expr, $buf:expr) => {{
+        match select!($pipe; 0) {
+            Ok(fdset) => {
+                let output = $pipe.as_mut().unwrap();
+                match fdset.contains(output.as_raw_fd()) {
+                    true => output.read(&mut $buf),
+                    false => Ok(0)
+                }
+            },
+            Err(e) => Err($crate::core::installer::Error::from(e)),
+        }
     }};
 }
 
@@ -55,3 +66,22 @@ pub type ErrorKind = std::io::ErrorKind;
 pub type Result<T> = std::io::Result<T>;
 
 mod_use::mod_use!(pkgmanager, rustup);
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use super::find_command;
+
+    #[test]
+    fn test_find_command() {
+        let paths = find_command(
+            "cargo",
+            env::var("HOME")
+                .map(|s| vec![format!("{}/.cargo/bin", s)])
+                .unwrap_or(Vec::new()),
+        );
+
+        println!("{:#?}", paths);
+    }
+}

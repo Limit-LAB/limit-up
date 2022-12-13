@@ -117,19 +117,7 @@ impl PackageManager {
             loop {
                 root_proc.stdin.as_mut().unwrap().write_all(b"whoami\n")?;
 
-                let mut fdset = FdSet::new();
-                fdset.insert(root_proc.stdout.as_ref().unwrap().as_raw_fd());
-                fdset.insert(root_proc.stderr.as_ref().unwrap().as_raw_fd());
-
-                select(
-                    fdset.highest().unwrap() + 1,
-                    &mut fdset,
-                    None,
-                    None,
-                    &mut TimeVal::seconds(5),
-                )
-                .map_err(|e| Error::from(e))?;
-
+                let fdset = select!(root_proc.stdout, root_proc.stderr; 5000)?;
                 if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
                     root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
                     break;
