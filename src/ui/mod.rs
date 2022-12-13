@@ -15,9 +15,6 @@ static LOGO: &'static str = r#"|      _)            _)  |
   |       |  |   |   |  |  |  
   _____| _| _|  _|  _| _| \__|"#;
 
-#[derive(Debug, Default)]
-struct UserData {}
-
 pub struct Ui {
     ui: Cursive,
 }
@@ -36,8 +33,6 @@ impl Ui {
             t.palette[Secondary] = Blue.light();
             t.palette[Highlight] = Cyan.light();
         });
-
-        ui.set_user_data(UserData::default());
 
         init_install_ui(&mut ui);
 

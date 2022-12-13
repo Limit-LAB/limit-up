@@ -6,9 +6,12 @@ use std::{
 #[macro_export]
 macro_rules! select {
     ($($pipe:expr),+; $timeout:expr) => {{
+        use std::os::fd::AsRawFd;
+        use nix::sys::select::{select, FdSet};
+
         let mut fdset = FdSet::new();
         $(
-            fdset.insert($pipe.as_ref().unwrap().as_raw_fd());
+            fdset.insert($pipe.as_raw_fd());
         )+
 
         select(
@@ -16,7 +19,7 @@ macro_rules! select {
             &mut fdset,
             None,
             None,
-            &mut TimeVal::milliseconds($timeout),
+            $timeout,
         )
         .map(|_| fdset)
     }}
@@ -25,9 +28,9 @@ macro_rules! select {
 #[macro_export]
 macro_rules! try_read {
     ($pipe:expr, $buf:expr) => {{
-        match select!($pipe; 0) {
+        match select!($pipe; &mut TimeVal::milliseconds(0)) {
             Ok(fdset) => {
-                let output = $pipe.as_mut().unwrap();
+                let output = $pipe;
                 match fdset.contains(output.as_raw_fd()) {
                     true => output.read(&mut $buf),
                     false => Ok(0)

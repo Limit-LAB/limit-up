@@ -1,9 +1,9 @@
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::{Read, Write},
     process::{Child, Command, Stdio},
 };
 
-use super::{Error, Result};
+use super::{ErrorKind, Result};
 
 trait PkgManager {
     fn install(&self, pkgs: &str) -> String;
@@ -80,10 +80,7 @@ impl PackageManager {
         use std::{iter::empty, os::fd::AsRawFd};
 
         use nix::{
-            sys::{
-                select::{select, FdSet},
-                time::{TimeVal, TimeValLike},
-            },
+            sys::time::{TimeVal, TimeValLike},
             unistd::Uid,
         };
 
@@ -111,13 +108,18 @@ impl PackageManager {
                     .write_all(format!("{}\n", passwd.as_ref()).as_bytes())?;
 
                 root_proc.stderr.as_mut().unwrap().read(&mut buf)?;
-                while try_read!(root_proc.stderr, buf)? != 0 {}
+                while try_read!(root_proc.stderr.as_mut().unwrap(), buf)? != 0 {}
             }
 
             loop {
                 root_proc.stdin.as_mut().unwrap().write_all(b"whoami\n")?;
 
-                let fdset = select!(root_proc.stdout, root_proc.stderr; 5000)?;
+                let fdset = select!(
+                    root_proc.stdout.as_mut().unwrap(),
+                    root_proc.stderr.as_mut().unwrap();
+                    &mut TimeVal::seconds(5)
+                )?;
+
                 if fdset.contains(root_proc.stdout.as_ref().unwrap().as_raw_fd()) {
                     root_proc.stdout.as_mut().unwrap().read(&mut buf)?;
                     break;
