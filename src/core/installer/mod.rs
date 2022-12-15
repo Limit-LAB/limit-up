@@ -68,7 +68,7 @@ pub type Error = std::io::Error;
 pub type ErrorKind = std::io::ErrorKind;
 pub type Result<T> = std::io::Result<T>;
 
-mod_use::mod_use!(pkgmanager, rustup);
+mod_use::mod_use!(pkgmanager, rustup, cargo);
 
 #[cfg(test)]
 mod tests {
@@ -82,7 +82,7 @@ mod tests {
             "cargo",
             env::var("HOME")
                 .map(|s| vec![format!("{}/.cargo/bin", s)])
-                .unwrap_or(Vec::new()),
+                .unwrap_or_default(),
         );
 
         println!("{:#?}", paths);

@@ -22,7 +22,7 @@ A CLI tool that helps you to setup limit-server :)",
                 .child(Button::new_raw("[ Quit ]", |ui| ui.quit()))
                 .child(DummyView {}.full_width())
                 .child(Button::new_raw("[ Next ]", |ui| {
-                    ui.find_name::<StepTabs>("steptabs").unwrap().next();
+                    ui.find_name::<StepTabs>("step_tabs").unwrap().next();
                     super::prepare_install(ui);
                 }))
                 .with(|layout| {

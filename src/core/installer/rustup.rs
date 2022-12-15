@@ -35,7 +35,7 @@ impl Rustup {
             .spawn()?;
 
         let proc = Command::new("sh")
-            .args(["-s", "--", "-y", "--default-toolchain", "none"])
+            .args(["-s", "--", "-y", "--default-toolchain", "nightly"])
             .stdin(curl.stdout.take().unwrap())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

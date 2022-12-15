@@ -21,7 +21,7 @@ use cursive::{
 };
 
 use crate::{
-    core::installer::{find_command, Error, ErrorKind, PackageManager, Result, Rustup},
+    core::installer::{find_command, Cargo, Error, ErrorKind, PackageManager, Result, Rustup},
     select,
     ui::widgets::StepTabs,
 };
@@ -72,7 +72,7 @@ pub fn install() -> NamedView<impl View> {
         .with_name("Install")
 }
 
-enum Cargo {
+enum CargoConfig {
     InstallForMe,
     Path(String),
 }
@@ -81,7 +81,7 @@ enum InstallMethod {
     /// install limit server from binary
     Binary,
     /// install limit server from source
-    Source(Cargo),
+    Source(CargoConfig),
 }
 
 impl Default for InstallMethod {
@@ -107,9 +107,15 @@ pub fn prepare_install(ui: &mut Cursive) {
 
     let mut config = InstallConfig::default();
 
+    if find_command("curl", empty::<&str>()).is_empty() {
+        config.dependencies.push("curl".into());
+    }
+
     if find_command("redis-server", empty::<&str>()).is_empty() {
         config.dependencies.push("redis".into());
-    } else {
+    }
+
+    if config.dependencies.is_empty() {
         screens.set_active_screen(1);
     }
 
@@ -229,7 +235,7 @@ fn config_dialog() -> Dialog {
                                     "cargo",
                                     env::var("HOME")
                                         .map(|s| vec![format!("{}/.cargo/bin", s)])
-                                        .unwrap_or(Vec::new()),
+                                        .unwrap_or_default(),
                                 );
 
                                 if paths.is_empty() {
@@ -274,16 +280,13 @@ fn config_dialog() -> Dialog {
     )
     .title("Installation Configuration")
     .button("Confirm", move |ui| {
-        if !Path::new(
-            ui.find_name::<TextArea>("install_root")
-                .unwrap()
-                .get_content(),
-        )
-        .exists()
-        {
-            ui.add_layer(Dialog::info("Invalid install root").title("Oops"));
-            return;
-        }
+        let install_root = ui.find_name::<TextArea>("install_root").unwrap();
+        // if !Path::new(install_root.get_content()).exists() {
+        //     ui.add_layer(Dialog::info("Invalid install root").title("Oops"));
+        //     return;
+        // }
+
+        ui.user_data::<InstallConfig>().unwrap().install_root = install_root.get_content().into();
 
         ui.user_data::<InstallConfig>().unwrap().method = match &*method_group.selection() {
             true => InstallMethod::Binary,
@@ -295,7 +298,7 @@ fn config_dialog() -> Dialog {
                     .unwrap()
                     .as_str()
                 {
-                    "0" => InstallMethod::Source(Cargo::InstallForMe),
+                    "0" => InstallMethod::Source(CargoConfig::InstallForMe),
                     "1" => {
                         let path_edit = ui
                             .find_name::<HideableView<LinearLayout>>("cargo_path")
@@ -315,7 +318,7 @@ fn config_dialog() -> Dialog {
 
                         match specific.file_name() {
                             Some(name) if name == "cargo" && specific.is_file() => {
-                                InstallMethod::Source(Cargo::Path(
+                                InstallMethod::Source(CargoConfig::Path(
                                     specific.to_str().unwrap().into(),
                                 ))
                             }
@@ -325,7 +328,7 @@ fn config_dialog() -> Dialog {
                             }
                         }
                     }
-                    path => InstallMethod::Source(Cargo::Path(path.into())),
+                    path => InstallMethod::Source(CargoConfig::Path(path.into())),
                 }
             }
         };
@@ -348,7 +351,8 @@ fn config_dialog() -> Dialog {
                             ui.add_layer(
                                 Dialog::text(format!("An error occurred while installing: {}", e))
                                     .title("Error")
-                                    .button("Quit", |ui| ui.quit()),
+                                    .button("Quit", |ui| ui.quit())
+                                    .max_width(50),
                             );
                         }))
                         .unwrap();
@@ -441,13 +445,13 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
         let pkg_manager = config.pkg_manager.take().unwrap();
         let mut proc = pkg_manager.install(config.dependencies)?;
 
-        trace_process!(proc, 30, |s| Error::new(
+        trace_process!(proc, 39, |s| Error::new(
             ErrorKind::Other,
             format!("Package manager exit with {}", s),
         ));
-
-        counter.set(40);
     }
+
+    counter.set(40);
 
     // install limit-server
     match config.method {
@@ -455,28 +459,56 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
             // todo
         }
         InstallMethod::Source(cargo) => {
-            let cargo = match cargo {
-                Cargo::InstallForMe => {
+            let path = match cargo {
+                CargoConfig::InstallForMe => {
+                    cb_sink
+                        .send(Box::new(|ui| {
+                            ui.find_name::<TextView>("install_tip")
+                                .unwrap()
+                                .set_content("Setup rust...")
+                        }))
+                        .unwrap();
+
                     let mut proc = Rustup::install()?;
 
-                    trace_process!(proc, 50, |s| Error::new(
+                    trace_process!(proc, 49, |s| Error::new(
                         ErrorKind::Other,
-                        format!("Init rustup failed: {}", s),
+                        format!("Setup rust failed: {}", s),
                     ));
 
-                    format!("{}/.cargo/bin/cargo", env::var("HOME").unwrap_or_default())
+                    format!(
+                        "{}/.cargo/bin/cargo",
+                        env::var("HOME").map_err(|_| Error::new(
+                            ErrorKind::NotFound,
+                            "Can not locate cargo path"
+                        ))?
+                    )
                 }
-                Cargo::Path(p) => p,
+                CargoConfig::Path(p) => p,
             };
 
-            // todo: cargo install
+            cb_sink
+                .send(Box::new(|ui| {
+                    ui.find_name::<TextView>("install_tip")
+                        .unwrap()
+                        .set_content("Installing limit-server...")
+                }))
+                .unwrap();
+
+            // cargo install
+            let mut proc = Cargo::new(path).install(config.install_root)?;
+
+            trace_process!(proc, 99, |s| Error::new(
+                ErrorKind::Other,
+                format!("Install limit-server failed: {}", s),
+            ));
         }
     }
 
     // finished
     cb_sink
         .send(Box::new(|ui| {
-            ui.find_name::<StepTabs>("steptabs").unwrap().next();
+            ui.find_name::<StepTabs>("step_tabs").unwrap().next();
         }))
         .unwrap();
 

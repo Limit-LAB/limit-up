@@ -10,7 +10,7 @@ pub fn init_install_ui(ui: &mut Cursive) {
         .with_tab(install())
         // TODO
         .with_tab(DummyView {}.with_name("Config & Deploy"))
-        .with_name("steptabs");
+        .with_name("step_tabs");
 
     ui.add_fullscreen_layer(tab);
 }
