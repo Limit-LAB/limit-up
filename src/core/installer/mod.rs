@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 #[macro_export]
 macro_rules! as_raw {
     ($pipe:expr) => {{
@@ -12,7 +12,7 @@ macro_rules! as_raw {
     }}
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(windows)]
 #[macro_export]
 macro_rules! as_raw {
     ($pipe:expr) => {{
@@ -22,16 +22,15 @@ macro_rules! as_raw {
     }}
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 #[macro_export]
 macro_rules! select {
     ($($pipe:expr),+; $timeout:expr) => {{
-        use std::os::fd::AsRawFd;
         use nix::sys::select::{select, FdSet};
 
         let mut fdset = FdSet::new();
         $(
-            fdset.insert($pipe.as_raw_fd());
+            fdset.insert(as_raw!($pipe));
         )+
 
         select(
@@ -45,7 +44,7 @@ macro_rules! select {
     }}
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(windows)]
 #[macro_export]
 macro_rules! select {
     ($($pipe:expr),+; $timeout:expr) => {{
@@ -91,15 +90,14 @@ macro_rules! select {
     }}
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 #[macro_export]
 macro_rules! try_read {
     ($pipe:expr, $buf:expr) => {{
         match select!($pipe; &mut TimeVal::milliseconds(0)) {
             Ok(fdset) => {
-                let output = $pipe;
-                match fdset.contains(output.as_raw_fd()) {
-                    true => output.read(&mut $buf),
+                match fdset.contains(as_raw!($pipe)) {
+                    true => $pipe.read(&mut $buf),
                     false => Ok(0)
                 }
             },
@@ -118,10 +116,10 @@ pub fn find_command(
             env::split_paths(&paths)
                 .chain(other.into_iter().map(|p| p.into()))
                 .filter_map(|path| {
-                    #[cfg(target_family = "windows")]
+                    #[cfg(windows)]
                     let full_path = path.join(format!("{}.exe", program.as_ref().display()));
 
-                    #[cfg(target_family = "unix")]
+                    #[cfg(unix)]
                     let full_path = path.join(program.as_ref());
 
                     full_path.is_file().then_some(full_path)

@@ -152,12 +152,12 @@ fn notes_dialog() -> Dialog {
                     .wrap_with(|password| PaddedView::lrtb(0, 0, 1, 0, password))
                     .wrap_with(HideableView::new)
                     .with(|password| {
-                        #[cfg(target_family = "unix")]
+                        #[cfg(unix)]
                         nix::unistd::Uid::effective()
                             .is_root()
                             .then(|| password.hide());
 
-                        #[cfg(target_family = "windows")]
+                        #[cfg(windows)]
                         password.hide();
                     }),
             )
@@ -170,7 +170,7 @@ fn notes_dialog() -> Dialog {
     )
     .title("Notes")
     .button("Yes", |ui| {
-        #[cfg(target_family = "unix")]
+        #[cfg(unix)]
         match PackageManager::new_with_passwd(
             &*ui.find_name::<EditView>("password").unwrap().get_content(),
         ) {
@@ -380,15 +380,15 @@ fn cancel_dialog() -> Dialog {
 
 fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) -> Result<()> {
     macro_rules! trace_process {
-        ($proc:expr, $process_limit:expr, $on_failed:expr) => {
+        ($proc:expr, $progress_limit:expr, $on_failed:expr) => {
             let mut out = BufReader::new($proc.stdout.take().unwrap());
             let mut err = BufReader::new($proc.stderr.take().unwrap());
 
             loop {
-                #[cfg(target_family = "unix")]
+                #[cfg(unix)]
                 let fdset = select!(out.get_ref(), err.get_ref(); None)?;
 
-                #[cfg(target_family = "windows")]
+                #[cfg(windows)]
                 let fdset = {
                     let fdset = select!(out.get_ref(), err.get_ref(); 1000);
 
@@ -410,22 +410,14 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
                 }
 
 
-                #[cfg(target_family = "unix")]
-                if counter.get() < $process_limit && fdset.highest().is_some() {
+                #[cfg(unix)]
+                if counter.get() < $progress_limit && fdset.highest().is_some() {
                     counter.tick(1);
                 }
 
-                #[cfg(target_family = "windwos")]
-                if counter.get() < $process_limit && !fdset.is_empty() {
+                #[cfg(windows)]
+                if counter.get() < $progress_limit && !fdset.is_empty() {
                     counter.tick(1);
-                }
-
-                if let Some(s) = $proc.try_wait()? {
-                    if s.success() {
-                        break;
-                    }
-
-                    return Err($on_failed(s));
                 }
 
                 cb_sink
@@ -451,6 +443,14 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
                         }
                     }))
                     .unwrap();
+
+                if let Some(s) = $proc.try_wait()? {
+                    if s.success() {
+                        break;
+                    }
+
+                    return Err($on_failed(s));
+                }
             }
         };
     }

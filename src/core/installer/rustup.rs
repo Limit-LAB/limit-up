@@ -7,19 +7,19 @@ use super::{Error, ErrorKind, Result};
 
 pub struct Rustup;
 
-#[cfg(target_family = "windows")]
+#[cfg(windows)]
 const DELIMITER: char = ';';
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 const DELIMITER: char = ':';
 
 impl Rustup {
-    #[cfg(target_family = "windows")]
+    #[cfg(windows)]
     pub fn install() -> Result<Child> {
         Err(ErrorKind::Unsupported.into())
     }
 
-    #[cfg(target_family = "unix")]
+    #[cfg(unix)]
     pub fn install() -> Result<Child> {
         let mut curl = Command::new("curl")
             .args([
@@ -86,7 +86,7 @@ mod tests {
 
     use super::Rustup;
 
-    #[cfg(target_family = "unix")]
+    #[cfg(unix)]
     #[test]
     fn rustup_test() {
         if find_command("curl", empty::<&str>()).is_empty() {

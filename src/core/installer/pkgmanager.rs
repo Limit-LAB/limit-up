@@ -11,7 +11,7 @@ trait PkgManager {
     fn name(&self) -> &'static str;
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 macro_rules! impl_pkg_manager {
     ($class:ident, $name:expr, $install:expr, $uninstall:expr, $update:expr, $flags:expr) => {
         pub struct $class;
@@ -53,15 +53,15 @@ macro_rules! impl_pkg_manager {
     };
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl_pkg_manager!(Apt, "apt-get", "install", "remove", "update", "-y");
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl_pkg_manager!(Dnf, "dnf", "install", "remove", "update", "-y");
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "-Sy", "--noconfirm");
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl_pkg_manager!(Zypper, "zypper", "install", "remove", "update", "-y");
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl_pkg_manager!(Apk, "apk", "add", "del", "update", ""); // apk does not need
 
 macro_rules! boxed_mgrs {
@@ -80,7 +80,7 @@ impl PackageManager {
         Err(ErrorKind::Unsupported.into())
     }
 
-    #[cfg(target_family = "unix")]
+    #[cfg(unix)]
     pub fn new_with_passwd(passwd: impl AsRef<str>) -> Result<PackageManager> {
         use std::{iter::empty, os::fd::AsRawFd};
 
@@ -191,7 +191,7 @@ mod tests {
 
     use super::PackageManager;
 
-    #[cfg(target_family = "unix")]
+    #[cfg(unix)]
     #[test]
     fn pkgmgr_test() {
         let passwd = env::var("PASSWD").unwrap_or_default();
