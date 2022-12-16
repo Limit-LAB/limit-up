@@ -170,10 +170,15 @@ fn notes_dialog() -> Dialog {
     )
     .title("Notes")
     .button("Yes", |ui| {
+        #[cfg(windows)]
+        let mgr = PackageManager::new();
+
         #[cfg(unix)]
-        match PackageManager::new_with_passwd(
+        let mgr = PackageManager::new_with_passwd(
             &*ui.find_name::<EditView>("password").unwrap().get_content(),
-        ) {
+        );
+
+        match mgr {
             Ok(p) => ui.user_data::<InstallConfig>().unwrap().pkg_manager = Some(p),
             Err(e) => {
                 ui.add_layer(Dialog::info(format!("Error: {}", e)).title("Oops"));
