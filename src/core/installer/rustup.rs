@@ -15,8 +15,8 @@ const DELIMITER: char = ':';
 
 impl Rustup {
     #[cfg(target_family = "windows")]
-    pub fn install() -> Result<Self> {
-        Err(Error::NotSupported)
+    pub fn install() -> Result<Child> {
+        Err(ErrorKind::Unsupported.into())
     }
 
     #[cfg(target_family = "unix")]
@@ -86,6 +86,7 @@ mod tests {
 
     use super::Rustup;
 
+    #[cfg(target_family = "unix")]
     #[test]
     fn rustup_test() {
         if find_command("curl", empty::<&str>()).is_empty() {

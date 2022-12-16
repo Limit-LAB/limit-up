@@ -11,5 +11,6 @@ description = "A CLI tool that helps you to setup limit-server."
 mod_use = "0.2.1"
 clap = { version = "4.0", features = ["derive"] }
 nix = "0.26"
+windows = { version = "0.41", features = ["Win32_System_Threading", "Win32_Foundation"] }
 os_info = "3.5.1"
 cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }

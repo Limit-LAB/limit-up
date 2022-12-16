@@ -3,6 +3,26 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(target_family = "unix")]
+#[macro_export]
+macro_rules! as_raw {
+    ($pipe:expr) => {{
+        use std::os::fd::AsRawFd;
+        $pipe.as_raw_fd()
+    }}
+}
+
+#[cfg(target_family = "windows")]
+#[macro_export]
+macro_rules! as_raw {
+    ($pipe:expr) => {{
+        use std::{mem, os::windows::prelude::AsRawHandle};
+
+        unsafe { mem::transmute($pipe.as_raw_handle()) }
+    }}
+}
+
+#[cfg(target_family = "unix")]
 #[macro_export]
 macro_rules! select {
     ($($pipe:expr),+; $timeout:expr) => {{
@@ -25,6 +45,53 @@ macro_rules! select {
     }}
 }
 
+#[cfg(target_family = "windows")]
+#[macro_export]
+macro_rules! select {
+    ($($pipe:expr),+; $timeout:expr) => {{
+        use windows::Win32::{
+            Foundation::WAIT_OBJECT_0, System::Threading::WaitForMultipleObjects,
+        };
+
+        #[allow(unused_unsafe)]
+        unsafe {
+            let mut once = true;
+            let mut index = 0;
+            let mut ret = Vec::new();
+            let handles = vec![$(as_raw!($pipe),)+];
+            loop {
+                let res = WaitForMultipleObjects(
+                    &handles[index..],
+                    false,
+                    if once {
+                        once = false;
+                        $timeout
+                    } else {
+                        0
+                    },
+                );
+
+                // valid index
+                if res.0 < WAIT_OBJECT_0.0 + handles.len() as u32 {
+                    ret.push(handles[res.0 as usize]);
+
+                    // is last item
+                    if res.0 == handles.len() as u32 - 1 {
+                        break;
+                    }
+
+                    index = res.0 as usize + 1;
+                } else {
+                    break;
+                }
+            }
+
+            ret
+        }
+    }}
+}
+
+#[cfg(target_family = "unix")]
 #[macro_export]
 macro_rules! try_read {
     ($pipe:expr, $buf:expr) => {{

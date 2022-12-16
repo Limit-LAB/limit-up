@@ -2,7 +2,6 @@ use std::{
     env,
     io::{BufRead, BufReader},
     iter::empty,
-    os::fd::AsRawFd,
     path::Path,
 };
 
@@ -21,6 +20,7 @@ use cursive::{
 };
 
 use crate::{
+    as_raw,
     core::installer::{find_command, Cargo, Error, ErrorKind, PackageManager, Result, Rustup},
     select,
     ui::widgets::StepTabs,
@@ -156,6 +156,9 @@ fn notes_dialog() -> Dialog {
                         nix::unistd::Uid::effective()
                             .is_root()
                             .then(|| password.hide());
+
+                        #[cfg(target_family = "windows")]
+                        password.hide();
                     }),
             )
             .child(DummyView {})
@@ -382,19 +385,47 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
             let mut err = BufReader::new($proc.stderr.take().unwrap());
 
             loop {
+                #[cfg(target_family = "unix")]
                 let fdset = select!(out.get_ref(), err.get_ref(); None)?;
+
+                #[cfg(target_family = "windows")]
+                let fdset = {
+                    let fdset = select!(out.get_ref(), err.get_ref(); 1000);
+
+                    if fdset.is_empty() {
+                        continue;
+                    }
+
+                    fdset
+                };
+
                 let (mut out_buf, mut err_buf) = (String::new(), String::new());
 
-                if fdset.contains(out.get_ref().as_raw_fd()) {
+                if fdset.contains(as_raw!(out.get_ref())) {
                     out.read_line(&mut out_buf)?;
                 }
 
-                if fdset.contains(err.get_ref().as_raw_fd()) {
+                if fdset.contains(as_raw!(err.get_ref())) {
                     err.read_line(&mut err_buf)?;
                 }
 
+
+                #[cfg(target_family = "unix")]
                 if counter.get() < $process_limit && fdset.highest().is_some() {
                     counter.tick(1);
+                }
+
+                #[cfg(target_family = "windwos")]
+                if counter.get() < $process_limit && !fdset.is_empty() {
+                    counter.tick(1);
+                }
+
+                if let Some(s) = $proc.try_wait()? {
+                    if s.success() {
+                        break;
+                    }
+
+                    return Err($on_failed(s));
                 }
 
                 cb_sink
@@ -420,14 +451,6 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
                         }
                     }))
                     .unwrap();
-
-                if let Some(s) = $proc.try_wait()? {
-                    if s.success() {
-                        break;
-                    }
-
-                    return Err($on_failed(s));
-                }
             }
         };
     }

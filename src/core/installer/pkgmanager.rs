@@ -11,6 +11,7 @@ trait PkgManager {
     fn name(&self) -> &'static str;
 }
 
+#[cfg(target_family = "unix")]
 macro_rules! impl_pkg_manager {
     ($class:ident, $name:expr, $install:expr, $uninstall:expr, $update:expr, $flags:expr) => {
         pub struct $class;
@@ -75,6 +76,10 @@ pub struct PackageManager {
 }
 
 impl PackageManager {
+    pub fn new() -> Result<PackageManager> {
+        Err(ErrorKind::Unsupported.into())
+    }
+
     #[cfg(target_family = "unix")]
     pub fn new_with_passwd(passwd: impl AsRef<str>) -> Result<PackageManager> {
         use std::{iter::empty, os::fd::AsRawFd};
@@ -186,6 +191,7 @@ mod tests {
 
     use super::PackageManager;
 
+    #[cfg(target_family = "unix")]
     #[test]
     fn pkgmgr_test() {
         let passwd = env::var("PASSWD").unwrap_or_default();
