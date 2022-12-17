@@ -1,5 +1,6 @@
 use std::{
     env,
+    fmt::Display,
     io::{BufRead, BufReader},
     iter::empty,
     path::Path,
@@ -21,10 +22,22 @@ use cursive::{
 
 use crate::{
     as_raw,
-    core::installer::{find_command, Cargo, Error, ErrorKind, PackageManager, Result, Rustup},
+    core::{
+        helper::Help,
+        installer::{find_command, Cargo, Error, ErrorKind, PackageManager, Result, Rustup},
+    },
     select,
     ui::widgets::StepTabs,
 };
+
+fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dialog> {
+    Dialog::text(format!("Error: {}", message))
+        .title("Oops")
+        .with(|d| {
+            default_button.then(|| d.add_button("Ok", |ui| ui.quit()));
+        })
+        .max_width(50)
+}
 
 pub fn install() -> NamedView<impl View> {
     LinearLayout::horizontal()
@@ -181,7 +194,10 @@ fn notes_dialog() -> Dialog {
         match mgr {
             Ok(p) => ui.user_data::<InstallConfig>().unwrap().pkg_manager = Some(p),
             Err(e) => {
-                ui.add_layer(Dialog::info(format!("Error: {}", e)).title("Oops"));
+                ui.add_layer(error_dialog(
+                    format!("{}\n\n{}", e, Help::Authorization),
+                    true,
+                ));
                 return;
             }
         };
@@ -329,7 +345,7 @@ fn config_dialog() -> Dialog {
                                 ))
                             }
                             _ => {
-                                ui.add_layer(Dialog::info("Invalid cargo path").title("Oops"));
+                                ui.add_layer(error_dialog("Invalid cargo path", true));
                                 return;
                             }
                         }
@@ -355,10 +371,8 @@ fn config_dialog() -> Dialog {
                     cb_sink
                         .send(Box::new(move |ui| {
                             ui.add_layer(
-                                Dialog::text(format!("An error occurred while installing: {}", e))
-                                    .title("Oops")
-                                    .button("Quit", |ui| ui.quit())
-                                    .max_width(50),
+                                error_dialog(e, false)
+                                    .with(|d| d.get_inner_mut().add_button("Quit", |ui| ui.quit())),
                             );
                         }))
                         .unwrap();
@@ -469,11 +483,16 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
             .unwrap();
 
         let pkg_manager = config.pkg_manager.take().unwrap();
+        let name = pkg_manager.name();
         let mut proc = pkg_manager.install(config.dependencies)?;
 
         trace_process!(proc, 39, |s| Error::new(
             ErrorKind::Other,
-            format!("Package manager exit with {}", s),
+            format!(
+                "Package manager exit with {}\n\n{}",
+                s,
+                Help::Dependencies(name)
+            ),
         ));
     }
 
@@ -499,7 +518,7 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
 
                     trace_process!(proc, 49, |s| Error::new(
                         ErrorKind::Other,
-                        format!("Setup rust failed: {}", s),
+                        format!("Setup rust failed: {}\n\n{}", s, Help::InitRust),
                     ));
 
                     format!(
@@ -526,7 +545,11 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
 
             trace_process!(proc, 99, |s| Error::new(
                 ErrorKind::Other,
-                format!("Install limit-server failed: {}", s),
+                format!(
+                    "Install limit-server failed: {}\n\n{}",
+                    s,
+                    Help::InstallServer
+                ),
             ));
         }
     }

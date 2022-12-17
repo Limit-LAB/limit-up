@@ -9,7 +9,7 @@ macro_rules! as_raw {
     ($pipe:expr) => {{
         use std::os::fd::AsRawFd;
         $pipe.as_raw_fd()
-    }}
+    }};
 }
 
 #[cfg(windows)]
@@ -19,7 +19,7 @@ macro_rules! as_raw {
         use std::{mem, os::windows::prelude::AsRawHandle};
 
         unsafe { mem::transmute($pipe.as_raw_handle()) }
-    }}
+    }};
 }
 
 #[cfg(unix)]
