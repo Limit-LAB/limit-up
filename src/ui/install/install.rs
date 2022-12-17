@@ -288,13 +288,11 @@ fn config_dialog() -> Dialog {
     )
     .title("Installation Configuration")
     .button("Confirm", move |ui| {
-        let install_root = ui.find_name::<TextArea>("install_root").unwrap();
-        // if !Path::new(install_root.get_content()).exists() {
-        //     ui.add_layer(Dialog::info("Invalid install root").title("Oops"));
-        //     return;
-        // }
-
-        ui.user_data::<InstallConfig>().unwrap().install_root = install_root.get_content().into();
+        ui.user_data::<InstallConfig>().unwrap().install_root = ui
+            .find_name::<TextArea>("install_root")
+            .unwrap()
+            .get_content()
+            .into();
 
         ui.user_data::<InstallConfig>().unwrap().method = match &*method_group.selection() {
             true => InstallMethod::Binary,
@@ -358,7 +356,7 @@ fn config_dialog() -> Dialog {
                         .send(Box::new(move |ui| {
                             ui.add_layer(
                                 Dialog::text(format!("An error occurred while installing: {}", e))
-                                    .title("Error")
+                                    .title("Oops")
                                     .button("Quit", |ui| ui.quit())
                                     .max_width(50),
                             );

@@ -76,6 +76,7 @@ pub struct PackageManager {
 }
 
 impl PackageManager {
+    #[cfg(windows)]
     pub fn new() -> Result<PackageManager> {
         Err(ErrorKind::Unsupported.into())
     }
