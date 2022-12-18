@@ -40,46 +40,40 @@ fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dial
 }
 
 pub fn install() -> NamedView<impl View> {
-    LinearLayout::horizontal()
-        .child(DummyView {}.fixed_width(10))
+    LinearLayout::vertical()
         .child(
-            LinearLayout::vertical()
-                .child(
-                    TextView::new(crate::ui::LOGO)
-                        .center()
-                        .style(BaseColor::Cyan.light())
-                        .full_height(),
-                )
-                .child(
-                    TextView::empty()
-                        .scrollable()
-                        .scroll_strategy(ScrollStrategy::StickToBottom)
-                        .wrap_with(Panel::new)
-                        .full_height()
-                        .wrap_with(|detail| HideableView::new(detail).hidden())
-                        .with_name("install_detail"),
-                )
-                .child(DummyView {})
-                .child(
-                    LinearLayout::horizontal()
-                        .child(TextView::new("Installing...").with_name("install_tip"))
-                        .child(DummyView {}.full_width())
-                        .child(Button::new_raw("[ Detail ]", |ui| {
-                            let mut detail = ui
-                                .find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
-                                    "install_detail",
-                                )
-                                .unwrap();
-                            let visible = !detail.is_visible();
-                            detail.set_visible(visible);
-                        })),
-                )
-                .child(DummyView {})
-                .child(ProgressBar::new().with_name("install_progress"))
-                .child(DummyView {}.fixed_height(2))
-                .full_width(),
+            TextView::new(crate::ui::LOGO)
+                .center()
+                .style(BaseColor::Cyan.light())
+                .full_height(),
         )
-        .child(DummyView {}.fixed_width(10))
+        .child(
+            TextView::empty()
+                .scrollable()
+                .scroll_strategy(ScrollStrategy::StickToBottom)
+                .wrap_with(Panel::new)
+                .full_height()
+                .wrap_with(|detail| HideableView::new(detail).hidden())
+                .with_name("install_detail"),
+        )
+        .child(DummyView {})
+        .child(
+            LinearLayout::horizontal()
+                .child(TextView::new("Installing...").with_name("install_tip"))
+                .child(DummyView {}.full_width())
+                .child(Button::new_raw("[ Detail ]", |ui| {
+                    let mut detail = ui
+                        .find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
+                            "install_detail",
+                        )
+                        .unwrap();
+                    let visible = !detail.is_visible();
+                    detail.set_visible(visible);
+                })),
+        )
+        .child(DummyView {})
+        .child(ProgressBar::new().with_name("install_progress"))
+        .wrap_with(|layout| PaddedView::lrtb(10, 10, 0, 2, layout))
         .full_screen()
         .wrap_with(|layout| HideableView::new(layout).hidden())
         .with_name("Install")
@@ -357,7 +351,7 @@ fn config_dialog() -> Dialog {
 
         ui.pop_layer();
 
-        ui.find_name::<HideableView<ResizedView<LinearLayout>>>("Install")
+        ui.find_name::<HideableView<ResizedView<PaddedView<LinearLayout>>>>("Install")
             .unwrap()
             .unhide();
 
