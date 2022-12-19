@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 
-lazy_static::lazy_static! {
-    static ref PKGMGR_HELP: HashMap<&'static str, &'static str> = [
-        ("dnf", "Please confirm the network settings and RHEL Subscription is enabled. \
-if problem persists please contact us.")
-    ].into_iter().collect();
-}
+use once_cell::sync::Lazy;
+
+static PKGMGR_HELP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    [(
+        "dnf",
+        "Please confirm the network settings and RHEL Subscription is enabled. \
+if problem persists please contact us.",
+    )]
+    .into_iter()
+    .collect()
+});
 
 pub enum Help {
     Authorization,
