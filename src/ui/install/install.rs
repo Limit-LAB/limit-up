@@ -4,6 +4,7 @@ use std::{
     io::{BufRead, BufReader},
     iter::empty,
     path::Path,
+    process::ExitStatus,
 };
 
 use cursive::{
@@ -19,6 +20,7 @@ use cursive::{
     },
     CbSink, Cursive,
 };
+use r18::tr;
 
 use crate::{
     as_raw,
@@ -31,10 +33,10 @@ use crate::{
 };
 
 fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dialog> {
-    Dialog::text(format!("Error: {}", message))
-        .title("Oops")
+    Dialog::text(tr!("Error: {}", message.to_string()))
+        .title(tr!("Oops"))
         .with(|d| {
-            default_button.then(|| d.add_button("Ok", |ui| ui.quit()));
+            default_button.then(|| d.add_button(tr!("Ok"), |ui| ui.quit()));
         })
         .max_width(50)
 }
@@ -59,9 +61,9 @@ pub fn install() -> NamedView<impl View> {
         .child(DummyView {})
         .child(
             LinearLayout::horizontal()
-                .child(TextView::new("Installing...").with_name("install_tip"))
+                .child(TextView::new(tr!("Installing...")).with_name("install_tip"))
                 .child(DummyView {}.full_width())
-                .child(Button::new_raw("[ Detail ]", |ui| {
+                .child(Button::new_raw(tr!("[ Detail ]"), |ui| {
                     let mut detail = ui
                         .find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
                             "install_detail",
@@ -76,7 +78,7 @@ pub fn install() -> NamedView<impl View> {
         .wrap_with(|layout| PaddedView::lrtb(10, 10, 0, 2, layout))
         .full_screen()
         .wrap_with(|layout| HideableView::new(layout).hidden())
-        .with_name("Install")
+        .with_name(tr!("Install"))
 }
 
 enum CargoConfig {
@@ -143,9 +145,9 @@ macro_rules! focus_on {
 fn notes_dialog() -> Dialog {
     Dialog::around(
         LinearLayout::vertical()
-            .child(TextView::new(
-                "Do you want us to install dependencies for you?",
-            ))
+            .child(TextView::new(tr!(
+                "Do you want us to install dependencies for you?"
+            )))
             .child(
                 EditView::new()
                     .secret()
@@ -154,7 +156,7 @@ fn notes_dialog() -> Dialog {
                     })
                     .with_name("password")
                     .wrap_with(Panel::new)
-                    .title("Root Password (if any)")
+                    .title(tr!("Root Password (if any)"))
                     .title_position(HAlign::Left)
                     .wrap_with(|password| PaddedView::lrtb(0, 0, 1, 0, password))
                     .wrap_with(HideableView::new)
@@ -170,13 +172,15 @@ fn notes_dialog() -> Dialog {
             )
             .child(DummyView {})
             .child(
-                TextView::new("WARN: Automatic installation may effect your local environment.")
-                    .style(BaseColor::Yellow.light()),
+                TextView::new(tr!(
+                    "WARN: Automatic installation may effect your local environment."
+                ))
+                .style(BaseColor::Yellow.light()),
             )
             .fixed_width(40),
     )
-    .title("Notes")
-    .button("Yes", |ui| {
+    .title(tr!("Notes"))
+    .button(tr!("Yes"), |ui| {
         #[cfg(windows)]
         let mgr = PackageManager::new();
 
@@ -188,10 +192,7 @@ fn notes_dialog() -> Dialog {
         match mgr {
             Ok(p) => ui.user_data::<InstallConfig>().unwrap().pkg_manager = Some(p),
             Err(e) => {
-                ui.add_layer(error_dialog(
-                    format!("{}\n\n{}", e, Help::Authorization),
-                    true,
-                ));
+                ui.add_layer(error_dialog(e.to_string(), true));
                 return;
             }
         };
@@ -200,7 +201,7 @@ fn notes_dialog() -> Dialog {
             .unwrap()
             .set_active_screen(1);
     })
-    .button("No, I will install them myself", |ui| {
+    .button(tr!("No, I will install them myself"), |ui| {
         ui.find_name::<ScreensView<Dialog>>("install_screens")
             .unwrap()
             .set_active_screen(2);
@@ -225,12 +226,12 @@ fn config_dialog() -> Dialog {
         LinearLayout::vertical()
             .child(
                 LinearLayout::vertical()
-                    .child(method_group.button(true, "From binary"))
-                    .child(method_group.button(false, "From source"))
-                    .child(TextView::new("Press <Enter> to select"))
+                    .child(method_group.button(true, tr!("From binary")))
+                    .child(method_group.button(false, tr!("From source")))
+                    .child(TextView::new(tr!("Press <Enter> to select")))
                     .wrap_with(|s| {
                         Panel::new(s)
-                            .title("Install limit-server")
+                            .title(tr!("Install limit-server"))
                             .title_position(HAlign::Left)
                     }),
             )
@@ -241,7 +242,7 @@ fn config_dialog() -> Dialog {
                     .min_size((30, 2))
                     .max_size((50, 2))
                     .wrap_with(Panel::new)
-                    .title("Install root")
+                    .title(tr!("Install root"))
                     .title_position(HAlign::Left),
             )
             .child(
@@ -258,7 +259,7 @@ fn config_dialog() -> Dialog {
 
                                 if paths.is_empty() {
                                     cargo_selector.add_item(
-                                        "<Install for me (using rustup)>",
+                                        tr!("<Install for me (using rustup)>"),
                                         String::from("0"),
                                     );
                                 } else {
@@ -268,7 +269,7 @@ fn config_dialog() -> Dialog {
                                     }
                                 }
                             })
-                            .item("<Specific path>", String::from("1"))
+                            .item(tr!("<Specific path>"), String::from("1"))
                             .on_select(|ui, selected| {
                                 ui.find_name::<HideableView<LinearLayout>>("cargo_path")
                                     .unwrap()
@@ -281,7 +282,7 @@ fn config_dialog() -> Dialog {
                     )
                     .child(
                         LinearLayout::horizontal()
-                            .child(TextView::new("Path: "))
+                            .child(TextView::new(tr!("Path: ")))
                             .child(TextArea::new().min_size((30, 2)).max_size((50, 2)))
                             .wrap_with(|edit| HideableView::new(edit).hidden())
                             .with_name("cargo_path"),
@@ -296,8 +297,8 @@ fn config_dialog() -> Dialog {
             )
             .scrollable(),
     )
-    .title("Installation Configuration")
-    .button("Confirm", move |ui| {
+    .title(tr!("Installation Configuration"))
+    .button(tr!("Confirm"), move |ui| {
         ui.user_data::<InstallConfig>().unwrap().install_root = ui
             .find_name::<TextArea>("install_root")
             .unwrap()
@@ -339,7 +340,7 @@ fn config_dialog() -> Dialog {
                                 ))
                             }
                             _ => {
-                                ui.add_layer(error_dialog("Invalid cargo path", true));
+                                ui.add_layer(error_dialog(tr!("Invalid cargo path"), true));
                                 return;
                             }
                         }
@@ -351,7 +352,7 @@ fn config_dialog() -> Dialog {
 
         ui.pop_layer();
 
-        ui.find_name::<HideableView<ResizedView<PaddedView<LinearLayout>>>>("Install")
+        ui.find_name::<HideableView<ResizedView<PaddedView<LinearLayout>>>>(tr!("Install"))
             .unwrap()
             .unhide();
 
@@ -377,16 +378,16 @@ fn config_dialog() -> Dialog {
 
 fn cancel_dialog() -> Dialog {
     Dialog::around(TextView::new("http://example.com"))
-        .button("Previous", |ui| {
+        .button(tr!("Previous"), |ui| {
             ui.find_name::<ScreensView<Dialog>>("install_screens")
                 .unwrap()
                 .set_active_screen(0);
         })
-        .button("Ok, I know", |ui| ui.quit())
+        .button(tr!("Ok, I know"), |ui| ui.quit())
         .with(|dialog| {
             dialog.set_focus(DialogFocus::Button(1));
         })
-        .title("Installation Cancelled")
+        .title(tr!("Installation Cancelled"))
 }
 
 fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) -> Result<()> {
@@ -472,7 +473,7 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
             .send(Box::new(|ui| {
                 ui.find_name::<TextView>("install_tip")
                     .unwrap()
-                    .set_content("Installing dependencies...")
+                    .set_content(tr!("Installing dependencies..."))
             }))
             .unwrap();
 
@@ -480,12 +481,12 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
         let name = pkg_manager.name();
         let mut proc = pkg_manager.install(config.dependencies)?;
 
-        trace_process!(proc, 39, |s| Error::new(
+        trace_process!(proc, 39, |s: ExitStatus| Error::new(
             ErrorKind::Other,
-            format!(
+            tr!(
                 "Package manager exit with {}\n\n{}",
-                s,
-                Help::Dependencies(name)
+                s.to_string(),
+                Help::PackageManager(name).to_string()
             ),
         ));
     }
@@ -504,22 +505,26 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
                         .send(Box::new(|ui| {
                             ui.find_name::<TextView>("install_tip")
                                 .unwrap()
-                                .set_content("Setup rust...")
+                                .set_content(tr!("Setup rust..."))
                         }))
                         .unwrap();
 
                     let mut proc = Rustup::install()?;
 
-                    trace_process!(proc, 49, |s| Error::new(
+                    trace_process!(proc, 49, |s: ExitStatus| Error::new(
                         ErrorKind::Other,
-                        format!("Setup rust failed: {}\n\n{}", s, Help::InitRust),
+                        tr!(
+                            "Setup rust failed: {}\n\n{}",
+                            s.to_string(),
+                            Help::InitRust.to_string()
+                        ),
                     ));
 
                     format!(
                         "{}/.cargo/bin/cargo",
                         env::var("HOME").map_err(|_| Error::new(
                             ErrorKind::NotFound,
-                            "Can not locate cargo path"
+                            tr!("Can not locate cargo path")
                         ))?
                     )
                 }
@@ -530,19 +535,19 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
                 .send(Box::new(|ui| {
                     ui.find_name::<TextView>("install_tip")
                         .unwrap()
-                        .set_content("Installing limit-server...")
+                        .set_content(tr!("Installing limit-server..."))
                 }))
                 .unwrap();
 
             // cargo install
             let mut proc = Cargo::new(path).install(config.install_root)?;
 
-            trace_process!(proc, 99, |s| Error::new(
+            trace_process!(proc, 99, |s: ExitStatus| Error::new(
                 ErrorKind::Other,
-                format!(
+                tr!(
                     "Install limit-server failed: {}\n\n{}",
-                    s,
-                    Help::InstallServer
+                    s.to_string(),
+                    Help::InstallServer.to_string()
                 ),
             ));
         }

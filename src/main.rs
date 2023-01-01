@@ -2,8 +2,12 @@ mod_use::mod_use!(args, error, ui);
 
 mod core;
 
+r18::init!("tr");
+
 fn main() {
     let args = Args::parse();
+
+    r18::auto_detect!();
 
     #[cfg(debug_assertions)]
     println!("{:#?}", args);
