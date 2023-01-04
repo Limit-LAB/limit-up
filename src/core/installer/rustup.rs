@@ -21,7 +21,9 @@ impl Rustup {
 
     #[cfg(unix)]
     pub fn install() -> Result<Child> {
-        let mut curl = Command::new("curl")
+        use std::io::Write;
+
+        let curl = Command::new("curl")
             .args([
                 "--proto",
                 "=https",
@@ -30,13 +32,6 @@ impl Rustup {
                 "https://sh.rustup.rs",
             ])
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let proc = Command::new("sh")
-            .args(["-s", "--", "-y", "--default-toolchain", "nightly"])
-            .stdin(curl.stdout.take().unwrap())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -50,6 +45,15 @@ impl Rustup {
             ));
         }
 
+        let mut proc = Command::new("sh")
+            .args(["-s", "--", "-y", "--default-toolchain", "nightly"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        proc.stdin.take().unwrap().write_all(&curl_res.stdout)?;
+        
         Ok(proc)
     }
 
