@@ -63,6 +63,8 @@ impl_pkg_manager!(Pacman, "pacman", "-S", "-Rns", "-Sy", "--noconfirm");
 impl_pkg_manager!(Zypper, "zypper", "install", "remove", "update", "-y");
 #[cfg(unix)]
 impl_pkg_manager!(Apk, "apk", "add", "del", "update", ""); // apk does not need
+#[cfg(unix)]
+impl_pkg_manager!(Pkg, "pkg", "install", "autoremove", "update", "-y");
 
 macro_rules! boxed_mgrs {
     ($($mgr:ident),+) => {
@@ -138,7 +140,7 @@ impl PackageManager {
         };
 
         let mgrs: Vec<Box<dyn PkgManager + Send + Sync>> =
-            boxed_mgrs![Apt, Dnf, Pacman, Zypper, Apk];
+            boxed_mgrs![Apt, Dnf, Pacman, Pkg, Zypper, Apk];
 
         mgrs.into_iter()
             .find(|mgr| !super::find_command(mgr.name(), empty::<&str>()).is_empty())
