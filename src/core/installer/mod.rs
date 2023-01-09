@@ -133,7 +133,7 @@ pub type Error = std::io::Error;
 pub type ErrorKind = std::io::ErrorKind;
 pub type Result<T> = std::io::Result<T>;
 
-mod_use::mod_use!(pkgmanager, rustup, cargo);
+mod_use::mod_use!(pkgmanager);
 
 #[cfg(test)]
 mod tests {

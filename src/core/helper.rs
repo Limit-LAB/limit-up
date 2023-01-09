@@ -17,7 +17,6 @@ pub enum Help {
     PackageManager(
         &'static str, // package manager name
     ),
-    InitRust,
     InstallServer,
 }
 
@@ -28,7 +27,6 @@ impl Help {
     pub fn info(&self) -> &'static str {
         match *self {
             Help::PackageManager(name) => PKGMGR_HELP.get(name).unwrap_or(&*NETWORK_HELP),
-            Help::InitRust => *NETWORK_HELP,
             Help::InstallServer => *NETWORK_HELP,
         }
     }

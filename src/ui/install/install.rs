@@ -26,7 +26,7 @@ use crate::{
     as_raw,
     core::{
         helper::Help,
-        installer::{find_command, Cargo, Error, ErrorKind, PackageManager, Result, Rustup},
+        installer::{find_command, Error, ErrorKind, PackageManager, Result},
     },
     select,
     ui::widgets::StepTabs,
@@ -81,35 +81,15 @@ pub fn install() -> NamedView<impl View> {
         .with_name(tr!("Install"))
 }
 
-enum CargoConfig {
-    InstallForMe,
-    Path(String),
-}
-
-enum InstallMethod {
-    /// install limit server from binary
-    Binary,
-    /// install limit server from source
-    Source(CargoConfig),
-}
-
-impl Default for InstallMethod {
-    fn default() -> Self {
-        InstallMethod::Binary
-    }
-}
-
 #[derive(Default)]
 struct InstallConfig {
     pkg_manager: Option<PackageManager>,
     dependencies: Vec<String>,
-    method: InstallMethod,
     install_root: String,
 }
 
 pub fn prepare_install(ui: &mut Cursive) {
-    let mut screens = ScreensView::new().with(|screens| {
-        screens.add_screen(notes_dialog());
+    let screens = ScreensView::new().with(|screens| {
         screens.add_screen(config_dialog());
         screens.add_screen(cancel_dialog());
     });
@@ -118,14 +98,6 @@ pub fn prepare_install(ui: &mut Cursive) {
 
     if find_command("curl", empty::<&str>()).is_empty() {
         config.dependencies.push("curl".into());
-    }
-
-    if find_command("redis-server", empty::<&str>()).is_empty() {
-        config.dependencies.push("redis".into());
-    }
-
-    if config.dependencies.is_empty() {
-        screens.set_active_screen(1);
     }
 
     ui.set_user_data(config);
@@ -142,12 +114,13 @@ macro_rules! focus_on {
     };
 }
 
-fn notes_dialog() -> Dialog {
+fn config_dialog() -> Dialog {
     Dialog::around(
         LinearLayout::vertical()
             .child(TextView::new(tr!(
                 "Do you want us to install dependencies for you?"
             )))
+            .child(DummyView {})
             .child(
                 EditView::new()
                     .secret()
@@ -158,7 +131,7 @@ fn notes_dialog() -> Dialog {
                     .wrap_with(Panel::new)
                     .title(tr!("Root Password (if any)"))
                     .title_position(HAlign::Left)
-                    .wrap_with(|password| PaddedView::lrtb(0, 0, 1, 0, password))
+                    .wrap_with(|password| PaddedView::lrtb(0, 0, 0, 1, password))
                     .wrap_with(HideableView::new)
                     .with(|password| {
                         #[cfg(unix)]
@@ -170,6 +143,19 @@ fn notes_dialog() -> Dialog {
                         password.hide();
                     }),
             )
+            .child(
+                TextArea::new()
+                    .content(format!(
+                        "{}/.limit-lab",
+                        env::var("HOME").unwrap_or_default()
+                    ))
+                    .with_name("install_root")
+                    .min_size((30, 2))
+                    .max_size((50, 2))
+                    .wrap_with(Panel::new)
+                    .title(tr!("Install root"))
+                    .title_position(HAlign::Left),
+            )
             .child(DummyView {})
             .child(
                 TextView::new(tr!(
@@ -177,7 +163,8 @@ fn notes_dialog() -> Dialog {
                 ))
                 .style(BaseColor::Yellow.light()),
             )
-            .fixed_width(40),
+            .fixed_width(40)
+            .scrollable(),
     )
     .title(tr!("Notes"))
     .button(tr!("Yes"), |ui| {
@@ -197,158 +184,11 @@ fn notes_dialog() -> Dialog {
             }
         };
 
-        ui.find_name::<ScreensView<Dialog>>("install_screens")
-            .unwrap()
-            .set_active_screen(1);
-    })
-    .button(tr!("No, I will install them myself"), |ui| {
-        ui.find_name::<ScreensView<Dialog>>("install_screens")
-            .unwrap()
-            .set_active_screen(2);
-    })
-}
-
-fn config_dialog() -> Dialog {
-    let mut method_group: RadioGroup<bool> =
-        RadioGroup::new().on_change(|ui, is_from_binary: &bool| {
-            ui.find_name::<HideableView<Panel<LinearLayout>>>("cargo")
-                .unwrap()
-                .set_visible(!*is_from_binary);
-
-            if *is_from_binary {
-                focus_on!(ui, DialogFocus::Button(1));
-            } else {
-                ui.focus_name("cargo").unwrap();
-            }
-        });
-
-    Dialog::around(
-        LinearLayout::vertical()
-            .child(
-                LinearLayout::vertical()
-                    .child(method_group.button(true, tr!("From binary")))
-                    .child(method_group.button(false, tr!("From source")))
-                    .child(TextView::new(tr!("Press <Enter> to select")))
-                    .wrap_with(|s| {
-                        Panel::new(s)
-                            .title(tr!("Install limit-server"))
-                            .title_position(HAlign::Left)
-                    }),
-            )
-            .child(
-                TextArea::new()
-                    .content(format!("{}/.cargo", env::var("HOME").unwrap_or_default()))
-                    .with_name("install_root")
-                    .min_size((30, 2))
-                    .max_size((50, 2))
-                    .wrap_with(Panel::new)
-                    .title(tr!("Install root"))
-                    .title_position(HAlign::Left),
-            )
-            .child(
-                LinearLayout::vertical()
-                    .child(
-                        SelectView::new()
-                            .with(|cargo_selector| {
-                                let paths = find_command(
-                                    "cargo",
-                                    env::var("HOME")
-                                        .map(|s| vec![format!("{}/.cargo/bin", s)])
-                                        .unwrap_or_default(),
-                                );
-
-                                if paths.is_empty() {
-                                    cargo_selector.add_item(
-                                        tr!("<Install for me (using rustup)>"),
-                                        String::from("0"),
-                                    );
-                                } else {
-                                    for path in paths {
-                                        let path = path.to_str().unwrap();
-                                        cargo_selector.add_item(path, path.into())
-                                    }
-                                }
-                            })
-                            .item(tr!("<Specific path>"), String::from("1"))
-                            .on_select(|ui, selected| {
-                                ui.find_name::<HideableView<LinearLayout>>("cargo_path")
-                                    .unwrap()
-                                    .set_visible(selected == "1");
-                            })
-                            .on_submit(|ui, _: &String| {
-                                focus_on!(ui, DialogFocus::Button(1));
-                            })
-                            .with_name("cargo_selector"),
-                    )
-                    .child(
-                        LinearLayout::horizontal()
-                            .child(TextView::new(tr!("Path: ")))
-                            .child(TextArea::new().min_size((30, 2)).max_size((50, 2)))
-                            .wrap_with(|edit| HideableView::new(edit).hidden())
-                            .with_name("cargo_path"),
-                    )
-                    .wrap_with(|layout| {
-                        Panel::new(layout)
-                            .title("Cargo")
-                            .title_position(HAlign::Left)
-                    })
-                    .wrap_with(|layout| HideableView::new(layout).hidden())
-                    .with_name("cargo"),
-            )
-            .scrollable(),
-    )
-    .title(tr!("Installation Configuration"))
-    .button(tr!("Confirm"), move |ui| {
         ui.user_data::<InstallConfig>().unwrap().install_root = ui
             .find_name::<TextArea>("install_root")
             .unwrap()
             .get_content()
             .into();
-
-        ui.user_data::<InstallConfig>().unwrap().method = match &*method_group.selection() {
-            true => InstallMethod::Binary,
-            false => {
-                match ui
-                    .find_name::<SelectView>("cargo_selector")
-                    .unwrap()
-                    .selection()
-                    .unwrap()
-                    .as_str()
-                {
-                    "0" => InstallMethod::Source(CargoConfig::InstallForMe),
-                    "1" => {
-                        let path_edit = ui
-                            .find_name::<HideableView<LinearLayout>>("cargo_path")
-                            .unwrap();
-
-                        let specific = Path::new(
-                            path_edit
-                                .get_inner()
-                                .get_child(1)
-                                .unwrap()
-                                .downcast_ref::<ResizedView<ResizedView<TextArea>>>()
-                                .unwrap()
-                                .get_inner()
-                                .get_inner()
-                                .get_content(),
-                        );
-
-                        match specific.file_name() {
-                            Some(name) if name == "cargo" && specific.is_file() => {
-                                InstallMethod::Source(CargoConfig::Path(
-                                    specific.to_str().unwrap().into(),
-                                ))
-                            }
-                            _ => {
-                                ui.add_layer(error_dialog(tr!("Invalid cargo path"), true));
-                                return;
-                            }
-                        }
-                    }
-                    path => InstallMethod::Source(CargoConfig::Path(path.into())),
-                }
-            }
-        };
 
         ui.pop_layer();
 
@@ -373,6 +213,11 @@ fn config_dialog() -> Dialog {
                         .unwrap();
                 }
             });
+    })
+    .button(tr!("No, I will install them myself"), |ui| {
+        ui.find_name::<ScreensView<Dialog>>("install_screens")
+            .unwrap()
+            .set_active_screen(1);
     })
 }
 
@@ -494,64 +339,7 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
     counter.set(40);
 
     // install limit-server
-    match config.method {
-        InstallMethod::Binary => {
-            // todo
-        }
-        InstallMethod::Source(cargo) => {
-            let path = match cargo {
-                CargoConfig::InstallForMe => {
-                    cb_sink
-                        .send(Box::new(|ui| {
-                            ui.find_name::<TextView>("install_tip")
-                                .unwrap()
-                                .set_content(tr!("Setup rust..."))
-                        }))
-                        .unwrap();
-
-                    let mut proc = Rustup::install()?;
-
-                    trace_process!(proc, 49, |s: ExitStatus| Error::new(
-                        ErrorKind::Other,
-                        tr!(
-                            "Setup rust failed: {}\n\n{}",
-                            s.to_string(),
-                            Help::InitRust.to_string()
-                        ),
-                    ));
-
-                    format!(
-                        "{}/.cargo/bin/cargo",
-                        env::var("HOME").map_err(|_| Error::new(
-                            ErrorKind::NotFound,
-                            tr!("Can not locate cargo path")
-                        ))?
-                    )
-                }
-                CargoConfig::Path(p) => p,
-            };
-
-            cb_sink
-                .send(Box::new(|ui| {
-                    ui.find_name::<TextView>("install_tip")
-                        .unwrap()
-                        .set_content(tr!("Installing limit-server..."))
-                }))
-                .unwrap();
-
-            // cargo install
-            let mut proc = Cargo::new(path).install(config.install_root)?;
-
-            trace_process!(proc, 99, |s: ExitStatus| Error::new(
-                ErrorKind::Other,
-                tr!(
-                    "Install limit-server failed: {}\n\n{}",
-                    s.to_string(),
-                    Help::InstallServer.to_string()
-                ),
-            ));
-        }
-    }
+    // TODO: download appimage
 
     // finished
     cb_sink
