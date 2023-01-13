@@ -1,9 +1,11 @@
 mod frontend;
-mod install;
+mod setup;
+
+#[allow(dead_code)]
 mod widgets;
 
 use frontend::init_frontend_ui;
-use install::{init_install_ui};
+use setup::{init_install_ui};
 
 use cursive::{
     theme::{BaseColor::*, Color::*, PaletteColor::*},
