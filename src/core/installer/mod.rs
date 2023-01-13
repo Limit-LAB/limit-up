@@ -3,110 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(unix)]
-#[macro_export]
-macro_rules! as_raw {
-    ($pipe:expr) => {{
-        use std::os::fd::AsRawFd;
-        $pipe.as_raw_fd()
-    }};
-}
-
-#[cfg(windows)]
-#[macro_export]
-macro_rules! as_raw {
-    ($pipe:expr) => {{
-        use std::{mem, os::windows::prelude::AsRawHandle};
-
-        unsafe { mem::transmute($pipe.as_raw_handle()) }
-    }};
-}
-
-#[cfg(unix)]
-#[macro_export]
-macro_rules! select {
-    ($($pipe:expr),+; $timeout:expr) => {{
-        use nix::sys::select::{select, FdSet};
-
-        let mut fdset = FdSet::new();
-        $(
-            fdset.insert(as_raw!($pipe));
-        )+
-
-        select(
-            fdset.highest().unwrap() + 1,
-            &mut fdset,
-            None,
-            None,
-            $timeout,
-        )
-        .map(|_| fdset)
-    }}
-}
-
-#[cfg(windows)]
-#[macro_export]
-macro_rules! select {
-    ($($pipe:expr),+; $timeout:expr) => {{
-        use windows::Win32::{
-            Foundation::WAIT_OBJECT_0, System::Threading::WaitForMultipleObjects,
-        };
-
-        #[allow(unused_unsafe)]
-        unsafe {
-            let mut once = true;
-            let mut index = 0;
-            let mut ret = Vec::new();
-            let handles = vec![$(as_raw!($pipe),)+];
-            loop {
-                let res = WaitForMultipleObjects(
-                    &handles[index..],
-                    false,
-                    if once {
-                        once = false;
-                        $timeout
-                    } else {
-                        0
-                    },
-                );
-
-                // valid index
-                if res.0 < WAIT_OBJECT_0.0 + handles.len() as u32 {
-                    ret.push(handles[res.0 as usize]);
-
-                    // is last item
-                    if res.0 == handles.len() as u32 - 1 {
-                        break;
-                    }
-
-                    index = res.0 as usize + 1;
-                } else {
-                    break;
-                }
-            }
-
-            ret
-        }
-    }}
-}
-
-#[cfg(unix)]
-#[macro_export]
-macro_rules! try_read {
-    ($pipe:expr, $buf:expr) => {{
-        match select!($pipe; &mut TimeVal::milliseconds(0)) {
-            Ok(fdset) => {
-                match fdset.contains(as_raw!($pipe)) {
-                    true => $pipe.read(&mut $buf),
-                    false => Ok(0)
-                }
-            },
-            Err(e) => Err($crate::core::installer::Error::from(e)),
-        }
-    }};
-}
-
-#[inline]
 pub fn find_command(
     program: impl AsRef<Path>,
     other: impl IntoIterator<Item = impl Into<PathBuf>>,
@@ -129,11 +25,20 @@ pub fn find_command(
         .unwrap_or_default()
 }
 
-pub type Error = std::io::Error;
-pub type ErrorKind = std::io::ErrorKind;
-pub type Result<T> = std::io::Result<T>;
+#[derive(Default)]
+pub struct InstallConfig {
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub install_root: String,
+}
 
-mod_use::mod_use!(pkgmanager);
+#[cfg(target_os = "linux")]
+mod_use::mod_use!(linux_impl);
+
+#[cfg(target_os = "freebsd")]
+mod_use::mod_use!(freebsd_impl);
+
+#[cfg(target_os = "windows")]
+mod_use::mod_use!(windows_impl);
 
 #[cfg(test)]
 mod tests {

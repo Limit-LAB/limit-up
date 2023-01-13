@@ -1,35 +1,26 @@
-use std::{
-    env,
-    fmt::Display,
-    io::{BufRead, BufReader},
-    iter::empty,
-    path::Path,
-    process::ExitStatus,
-};
+use std::{env, fmt::Display};
 
 use cursive::{
     align::HAlign,
     theme::BaseColor,
     traits::*,
-    utils::{markup::StyledString, Counter},
     view::ScrollStrategy,
     views::{
-        Button, Dialog, DialogFocus, DummyView, EditView, HideableView, LinearLayout, NamedView,
-        PaddedView, Panel, ProgressBar, RadioGroup, ResizedView, ScreensView, ScrollView,
-        SelectView, TextArea, TextView,
+        Button, Dialog, DialogFocus, DummyView, HideableView, LinearLayout, NamedView, PaddedView,
+        Panel, ProgressBar, ResizedView, ScreensView, ScrollView, TextArea, TextView,
     },
     CbSink, Cursive,
 };
+
 use r18::tr;
 
 use crate::{
-    as_raw,
     core::{
-        helper::Help,
-        installer::{find_command, Error, ErrorKind, PackageManager, Result},
+        installer::{self, InstallConfig},
+        RT,
     },
-    select,
     ui::widgets::StepTabs,
+    Result,
 };
 
 fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dialog> {
@@ -81,37 +72,25 @@ pub fn install() -> NamedView<impl View> {
         .with_name(tr!("Install"))
 }
 
-#[derive(Default)]
-struct InstallConfig {
-    pkg_manager: Option<PackageManager>,
-    dependencies: Vec<String>,
-    install_root: String,
-}
-
 pub fn prepare_install(ui: &mut Cursive) {
+    // PackageManager for FreeBSD requires Root permission
+    #[cfg(target_os = "freebsd")]
+    if !nix::unistd::Uid::effective().is_root() {
+        ui.add_layer(error_dialog(
+            tr!("Permission denied, please rerun as Root"),
+            true,
+        ));
+
+        return;
+    }
+
     let screens = ScreensView::new().with(|screens| {
         screens.add_screen(config_dialog());
         screens.add_screen(cancel_dialog());
     });
 
-    let mut config = InstallConfig::default();
-
-    if find_command("curl", empty::<&str>()).is_empty() {
-        config.dependencies.push("curl".into());
-    }
-
-    ui.set_user_data(config);
+    ui.set_user_data(InstallConfig::default());
     ui.add_layer(screens.with_name("install_screens"));
-}
-
-macro_rules! focus_on {
-    ($ui:expr, $focus:expr) => {
-        $ui.find_name::<ScreensView<Dialog>>("install_screens")
-            .unwrap()
-            .screen_mut()
-            .unwrap()
-            .set_focus($focus);
-    };
 }
 
 fn config_dialog() -> Dialog {
@@ -121,28 +100,6 @@ fn config_dialog() -> Dialog {
                 "Do you want us to install dependencies for you?"
             )))
             .child(DummyView {})
-            .child(
-                EditView::new()
-                    .secret()
-                    .on_submit(|ui, _| {
-                        focus_on!(ui, DialogFocus::Button(0));
-                    })
-                    .with_name("password")
-                    .wrap_with(Panel::new)
-                    .title(tr!("Root Password (if any)"))
-                    .title_position(HAlign::Left)
-                    .wrap_with(|password| PaddedView::lrtb(0, 0, 0, 1, password))
-                    .wrap_with(HideableView::new)
-                    .with(|password| {
-                        #[cfg(unix)]
-                        nix::unistd::Uid::effective()
-                            .is_root()
-                            .then(|| password.hide());
-
-                        #[cfg(windows)]
-                        password.hide();
-                    }),
-            )
             .child(
                 TextArea::new()
                     .content(format!(
@@ -167,53 +124,7 @@ fn config_dialog() -> Dialog {
             .scrollable(),
     )
     .title(tr!("Notes"))
-    .button(tr!("Yes"), |ui| {
-        #[cfg(windows)]
-        let mgr = PackageManager::new();
-
-        #[cfg(unix)]
-        let mgr = PackageManager::new_with_passwd(
-            &*ui.find_name::<EditView>("password").unwrap().get_content(),
-        );
-
-        match mgr {
-            Ok(p) => ui.user_data::<InstallConfig>().unwrap().pkg_manager = Some(p),
-            Err(e) => {
-                ui.add_layer(error_dialog(e.to_string(), true));
-                return;
-            }
-        };
-
-        ui.user_data::<InstallConfig>().unwrap().install_root = ui
-            .find_name::<TextArea>("install_root")
-            .unwrap()
-            .get_content()
-            .into();
-
-        ui.pop_layer();
-
-        ui.find_name::<HideableView<ResizedView<PaddedView<LinearLayout>>>>(tr!("Install"))
-            .unwrap()
-            .unhide();
-
-        let config = ui.take_user_data::<InstallConfig>().unwrap();
-        let cb_sink = ui.cb_sink().clone();
-
-        ui.find_name::<ProgressBar>("install_progress")
-            .unwrap()
-            .start(move |counter| {
-                if let Err(e) = install_task(cb_sink.clone(), counter, config) {
-                    cb_sink
-                        .send(Box::new(move |ui| {
-                            ui.add_layer(
-                                error_dialog(e, false)
-                                    .with(|d| d.get_inner_mut().add_button("Quit", |ui| ui.quit())),
-                            );
-                        }))
-                        .unwrap();
-                }
-            });
-    })
+    .button(tr!("Yes"), on_install)
     .button(tr!("No, I will install them myself"), |ui| {
         ui.find_name::<ScreensView<Dialog>>("install_screens")
             .unwrap()
@@ -222,6 +133,7 @@ fn config_dialog() -> Dialog {
 }
 
 fn cancel_dialog() -> Dialog {
+    // TODO
     Dialog::around(TextView::new("http://example.com"))
         .button(tr!("Previous"), |ui| {
             ui.find_name::<ScreensView<Dialog>>("install_screens")
@@ -235,111 +147,33 @@ fn cancel_dialog() -> Dialog {
         .title(tr!("Installation Cancelled"))
 }
 
-fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) -> Result<()> {
-    macro_rules! trace_process {
-        ($proc:expr, $progress_limit:expr, $on_failed:expr) => {
-            let mut out = BufReader::new($proc.stdout.take().unwrap());
-            let mut err = BufReader::new($proc.stderr.take().unwrap());
+fn on_install(ui: &mut Cursive) {
+    ui.user_data::<InstallConfig>().unwrap().install_root = ui
+        .find_name::<TextArea>("install_root")
+        .unwrap()
+        .get_content()
+        .into();
 
-            loop {
-                #[cfg(unix)]
-                let fdset = select!(out.get_ref(), err.get_ref(); None)?;
+    ui.pop_layer();
 
-                #[cfg(windows)]
-                let fdset = {
-                    let fdset = select!(out.get_ref(), err.get_ref(); 1000);
+    ui.find_name::<HideableView<ResizedView<PaddedView<LinearLayout>>>>(tr!("Install"))
+        .unwrap()
+        .unhide();
 
-                    if fdset.is_empty() {
-                        continue;
-                    }
+    let config = ui.take_user_data::<InstallConfig>().unwrap();
+    let cb_sink = ui.cb_sink().clone();
 
-                    fdset
-                };
+    RT.spawn(install_task(cb_sink, config));
+}
 
-                let (mut out_buf, mut err_buf) = (String::new(), String::new());
-
-                if fdset.contains(as_raw!(out.get_ref())) {
-                    out.read_line(&mut out_buf)?;
-                }
-
-                if fdset.contains(as_raw!(err.get_ref())) {
-                    err.read_line(&mut err_buf)?;
-                }
-
-
-                #[cfg(unix)]
-                if counter.get() < $progress_limit && fdset.highest().is_some() {
-                    counter.tick(1);
-                }
-
-                #[cfg(windows)]
-                if counter.get() < $progress_limit && !fdset.is_empty() {
-                    counter.tick(1);
-                }
-
-                cb_sink
-                    .send(Box::new(|ui| {
-                        let mut detail = ui
-                            .find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
-                                "install_detail",
-                            )
-                            .unwrap();
-
-                        let detail = detail
-                            .get_inner_mut()
-                            .get_inner_mut()
-                            .get_inner_mut()
-                            .get_inner_mut();
-
-                        if !out_buf.is_empty() {
-                            detail.append(out_buf);
-                        }
-
-                        if !err_buf.is_empty() {
-                            detail.append(StyledString::styled(err_buf, BaseColor::Red.light()));
-                        }
-                    }))
-                    .unwrap();
-
-                if let Some(s) = $proc.try_wait()? {
-                    if s.success() {
-                        break;
-                    }
-
-                    return Err($on_failed(s));
-                }
-            }
-        };
-    }
-
-    // Install dependencies
-    if !config.dependencies.is_empty() {
+async fn install_task(cb_sink: CbSink, config: InstallConfig) {
+    if let Err(e) = install_task_inner(&cb_sink, config).await {
         cb_sink
             .send(Box::new(|ui| {
-                ui.find_name::<TextView>("install_tip")
-                    .unwrap()
-                    .set_content(tr!("Installing dependencies..."))
+                ui.add_layer(error_dialog(e, true));
             }))
             .unwrap();
-
-        let pkg_manager = config.pkg_manager.take().unwrap();
-        let name = pkg_manager.name();
-        let mut proc = pkg_manager.install(config.dependencies)?;
-
-        trace_process!(proc, 39, |s: ExitStatus| Error::new(
-            ErrorKind::Other,
-            tr!(
-                "Package manager exit with {}\n\n{}",
-                s.to_string(),
-                Help::PackageManager(name).to_string()
-            ),
-        ));
     }
-
-    counter.set(40);
-
-    // install limit-server
-    // TODO: download appimage
 
     // finished
     cb_sink
@@ -347,6 +181,80 @@ fn install_task(cb_sink: CbSink, counter: Counter, mut config: InstallConfig) ->
             ui.find_name::<StepTabs>("step_tabs").unwrap().next();
         }))
         .unwrap();
+}
 
-    Ok(())
+// Large function: multi-platform implementation
+async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
+    // install_task_inner
+    #[cfg(target_os = "linux")]
+    {
+        cb_sink
+            .send(Box::new(move |ui| {
+                ui.find_name::<TextView>("install_tip")
+                    .unwrap()
+                    .set_content(tr!("Downloading limit-server..."));
+            }))
+            .unwrap();
+
+        let cb_sink = cb_sink.clone();
+        installer::install(config, move |p| {
+            cb_sink
+                .send(Box::new(move |ui| {
+                    ui.find_name::<ProgressBar>("install_progress")
+                        .unwrap()
+                        .set_value(p);
+                }))
+                .unwrap();
+        })
+        .await
+    }
+
+    // install_task_inner
+    #[cfg(target_os = "freebsd")]
+    {
+        use cursive::utils::markup::StyledString;
+
+        cb_sink
+            .send(Box::new(move |ui| {
+                ui.find_name::<TextView>("install_tip")
+                    .unwrap()
+                    .set_content(tr!("Installing Elixir..."));
+            }))
+            .unwrap();
+
+        let cb_sink = cb_sink.clone();
+        installer::install(config, move |progress, out, err| {
+            cb_sink
+                .send(Box::new(move |ui| {
+                    if !out.is_empty() || !err.is_empty() {
+                        let new_line = match out.is_empty() {
+                            true => StyledString::from(out),
+                            false => StyledString::styled(err, BaseColor::Red.light()),
+                        };
+
+                        ui.find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
+                            "install_detail",
+                        )
+                        .unwrap()
+                        .get_inner_mut()
+                        .get_inner_mut()
+                        .get_inner_mut()
+                        .get_inner_mut()
+                        .append(new_line);
+                    }
+
+                    ui.find_name::<ProgressBar>("install_progress")
+                        .unwrap()
+                        .set_value(progress);
+                }))
+                .unwrap();
+        })
+        .await
+    }
+
+    // install_task_inner
+    #[cfg(target_os = "windows")]
+    {
+        installer::install(config, move |_p| {}).await
+    }
 }

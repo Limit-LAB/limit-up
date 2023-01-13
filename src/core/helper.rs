@@ -1,34 +1,27 @@
-use std::collections::HashMap;
-
 use once_cell::sync::Lazy;
 use r18::tr;
 
-static PKGMGR_HELP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-    [(
-        "dnf",
-        tr!("Please confirm the network settings and RHEL Subscription is enabled. \
-if problem persists please contact us."),
-    )]
-    .into_iter()
-    .collect()
-});
-
 pub enum Help {
-    PackageManager(
-        &'static str, // package manager name
-    ),
-    InstallServer,
+    Git,
+    Network,
 }
 
-static NETWORK_HELP: Lazy<&'static str> = Lazy::new(|| tr!("Please confirm the network settings and try again. \
-If the problem persists please contact us."));
+static CONTACT_US: Lazy<&'static str> =
+    Lazy::new(|| tr!("if the problem persists please contact us."));
 
 impl Help {
-    pub fn info(&self) -> &'static str {
+    pub fn info(&self) -> String {
         match *self {
-            Help::PackageManager(name) => PKGMGR_HELP.get(name).unwrap_or(&*NETWORK_HELP),
-            Help::InstallServer => *NETWORK_HELP,
+            Help::Network => tr!(
+                "Please confirm the network settings and try again, {}",
+                &*CONTACT_US
+            ),
+            Help::Git => tr!(
+                "Check your network settings or delete the repository and try again, {}",
+                &*CONTACT_US
+            ),
         }
+        .to_string()
     }
 }
 
