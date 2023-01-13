@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use r18::tr;
 
+#[allow(dead_code)]
 pub enum Help {
     Git,
     Network,

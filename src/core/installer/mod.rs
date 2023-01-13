@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[allow(dead_code)]
 pub fn find_command(
     program: impl AsRef<Path>,
     other: impl IntoIterator<Item = impl Into<PathBuf>>,

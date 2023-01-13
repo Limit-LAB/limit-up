@@ -1,3 +1,4 @@
+use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::prelude::PermissionsExt;
@@ -15,9 +16,13 @@ pub async fn install(
     permission.set_mode(0o755);
     target.set_permissions(permission)?;
 
-    // TODO: download latest appimage
     let mut resp = HTTP_CLIENT
-        .get("https://github.com/Limit-LAB/limit-server")
+        .get(format!(
+            "https://github.com/Limit-LAB/limit-server/releases/latest/download/limit_up-{}-{}-{}",
+            env!("TARGET_ARCH"),
+            env!("TARGET_OS"),
+            env!("TARGET_ENV")
+        ))
         .send()
         .await?;
 
