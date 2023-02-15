@@ -5,17 +5,17 @@ mod setup;
 mod widgets;
 
 use frontend::init_frontend_ui;
-use setup::{init_install_ui};
+use setup::init_setup_ui;
 
 use cursive::{
     theme::{BaseColor::*, Color::*, PaletteColor::*},
     Cursive, CursiveExt,
 };
 
-static LOGO: &'static str = r#"|      _)            _)  |
-  |       |  __ `__ \   |  __|
-  |       |  |   |   |  |  |  
-  _____| _| _|  _|  _| _| \__|"#;
+static LOGO: &'static str = r#" |     _ _|   \  | _ _| ___ |
+ |       |   |\/ |   |      |
+ |       |   |   |   |      |
+_____| ___| _|  _| ___|    _|"#;
 
 pub struct Ui {
     ui: Cursive,
@@ -36,7 +36,7 @@ impl Ui {
             t.palette[Highlight] = Cyan.light();
         });
 
-        init_install_ui(&mut ui);
+        init_setup_ui(&mut ui);
 
         ui.add_screen();
 

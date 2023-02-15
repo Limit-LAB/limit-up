@@ -1,4 +1,4 @@
-use build_target::{target_os, target_env, target_arch};
+use build_target::{target_arch, target_env, target_os};
 
 fn main() {
     println!("cargo:rustc-env=TARGET_OS={}", target_os().unwrap());
