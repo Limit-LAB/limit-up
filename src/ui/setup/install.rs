@@ -1,4 +1,4 @@
-use std::{env, fmt::Display};
+use std::env;
 
 use cursive::{
     align::HAlign,
@@ -23,7 +23,8 @@ use crate::{
     Result,
 };
 
-fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dialog> {
+// convenient function to create an error dialog
+fn error_dialog(message: impl ToString, default_button: bool) -> ResizedView<Dialog> {
     Dialog::text(tr!("Error: {}", message.to_string()))
         .title(tr!("Oops"))
         .with(|d| {
@@ -32,6 +33,8 @@ fn error_dialog(message: impl Display, default_button: bool) -> ResizedView<Dial
         .max_width(50)
 }
 
+// returns install(ing) page,
+// it is hidden by default and shown on on_install
 pub fn install() -> NamedView<impl View> {
     LinearLayout::vertical()
         .child(
@@ -72,6 +75,8 @@ pub fn install() -> NamedView<impl View> {
         .with_name(tr!("Install"))
 }
 
+// initialize configure ui
+// this function will be called when the user clicks Next button on the welcome page
 pub fn prepare_install(ui: &mut Cursive) {
     // PackageManager for FreeBSD requires Root permission
     #[cfg(target_os = "freebsd")]
@@ -93,6 +98,8 @@ pub fn prepare_install(ui: &mut Cursive) {
     ui.add_layer(screens.with_name("install_screens"));
 }
 
+// configure automatic installation
+// this dialog will appear when the user wants install automatically
 fn config_dialog() -> Dialog {
     Dialog::around(
         LinearLayout::vertical()
@@ -132,6 +139,8 @@ fn config_dialog() -> Dialog {
     })
 }
 
+// help information about manual install
+// this dialog will appear when the user doesn't want install automatically
 fn cancel_dialog() -> Dialog {
     // TODO
     Dialog::around(TextView::new("http://example.com"))
@@ -147,6 +156,7 @@ fn cancel_dialog() -> Dialog {
         .title(tr!("Installation Cancelled"))
 }
 
+// this function will be called when the user confirms automatic installation
 fn on_install(ui: &mut Cursive) {
     ui.user_data::<InstallConfig>().unwrap().install_root = ui
         .find_name::<TextArea>("install_root")
@@ -166,6 +176,7 @@ fn on_install(ui: &mut Cursive) {
     RT.spawn(install_task(cb_sink, config));
 }
 
+// install limit backend
 async fn install_task(cb_sink: CbSink, config: InstallConfig) {
     if let Err(e) = install_task_inner(&cb_sink, config).await {
         cb_sink
@@ -183,78 +194,76 @@ async fn install_task(cb_sink: CbSink, config: InstallConfig) {
         .unwrap();
 }
 
-// Large function: multi-platform implementation
+// linux implementation
+#[cfg(target_os = "linux")]
 async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
-    // install_task_inner
-    #[cfg(target_os = "linux")]
-    {
+    cb_sink
+        .send(Box::new(move |ui| {
+            ui.find_name::<TextView>("install_tip")
+                .unwrap()
+                .set_content(tr!("Downloading limit-server..."));
+        }))
+        .unwrap();
+
+    let cb_sink = cb_sink.clone();
+    let callback = move |progress| {
         cb_sink
             .send(Box::new(move |ui| {
-                ui.find_name::<TextView>("install_tip")
+                ui.find_name::<ProgressBar>("install_progress")
                     .unwrap()
-                    .set_content(tr!("Downloading limit-server..."));
+                    .set_value(progress);
             }))
             .unwrap();
+    };
 
-        let cb_sink = cb_sink.clone();
-        installer::install(config, move |p| {
-            cb_sink
-                .send(Box::new(move |ui| {
-                    ui.find_name::<ProgressBar>("install_progress")
-                        .unwrap()
-                        .set_value(p);
-                }))
-                .unwrap();
-        })
-        .await
-    }
+    installer::install(config, callback).await
+}
 
-    // install_task_inner
-    #[cfg(target_os = "freebsd")]
-    {
-        use cursive::utils::markup::StyledString;
+// freebsd implementation
+#[cfg(target_os = "freebsd")]
+async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
+    use cursive::utils::markup::StyledString;
 
+    cb_sink
+        .send(Box::new(move |ui| {
+            ui.find_name::<TextView>("install_tip")
+                .unwrap()
+                .set_content(tr!("Installing Elixir..."));
+        }))
+        .unwrap();
+
+    let cb_sink = cb_sink.clone();
+    installer::install(config, move |progress, out, err| {
         cb_sink
             .send(Box::new(move |ui| {
-                ui.find_name::<TextView>("install_tip")
+                if !out.is_empty() || !err.is_empty() {
+                    let new_line = match out.is_empty() {
+                        true => StyledString::from(out),
+                        false => StyledString::styled(err, BaseColor::Red.light()),
+                    };
+
+                    ui.find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
+                        "install_detail",
+                    )
                     .unwrap()
-                    .set_content(tr!("Installing Elixir..."));
+                    .get_inner_mut()
+                    .get_inner_mut()
+                    .get_inner_mut()
+                    .get_inner_mut()
+                    .append(new_line);
+                }
+
+                ui.find_name::<ProgressBar>("install_progress")
+                    .unwrap()
+                    .set_value(progress);
             }))
             .unwrap();
+    })
+    .await
+}
 
-        let cb_sink = cb_sink.clone();
-        installer::install(config, move |progress, out, err| {
-            cb_sink
-                .send(Box::new(move |ui| {
-                    if !out.is_empty() || !err.is_empty() {
-                        let new_line = match out.is_empty() {
-                            true => StyledString::from(out),
-                            false => StyledString::styled(err, BaseColor::Red.light()),
-                        };
-
-                        ui.find_name::<HideableView<ResizedView<Panel<ScrollView<TextView>>>>>(
-                            "install_detail",
-                        )
-                        .unwrap()
-                        .get_inner_mut()
-                        .get_inner_mut()
-                        .get_inner_mut()
-                        .get_inner_mut()
-                        .append(new_line);
-                    }
-
-                    ui.find_name::<ProgressBar>("install_progress")
-                        .unwrap()
-                        .set_value(progress);
-                }))
-                .unwrap();
-        })
-        .await
-    }
-
-    // install_task_inner
-    #[cfg(target_os = "windows")]
-    {
-        installer::install(config, move |_p| {}).await
-    }
+// windows implementation
+#[cfg(target_os = "windows")]
+async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
+    installer::install(config, move |_p| {}).await
 }

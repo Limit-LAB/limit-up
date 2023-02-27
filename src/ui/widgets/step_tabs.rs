@@ -142,7 +142,7 @@ impl View for StepTabs {
         self.layout.on_event(event)
     }
 
-    fn call_on_any<'a>(&mut self, sel: &Selector<'_>, any: AnyCb<'a>) {
+    fn call_on_any(&mut self, sel: &Selector<'_>, any: AnyCb<'_>) {
         self.layout.call_on_any(sel, any);
     }
 

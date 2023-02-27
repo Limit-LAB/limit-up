@@ -7,6 +7,7 @@ r18::init!("tr");
 fn main() {
     let args = Args::parse();
 
+    // automatically sets the current locale.
     r18::auto_detect!();
 
     #[cfg(debug_assertions)]

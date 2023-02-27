@@ -4,6 +4,7 @@ use cursive::{traits::*, views::DummyView, Cursive};
 
 use super::widgets::StepTabs;
 
+// initialize `setup ui`
 pub fn init_setup_ui(ui: &mut Cursive) {
     let tab = StepTabs::new()
         .with_tab(welcome())

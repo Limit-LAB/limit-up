@@ -12,7 +12,7 @@ use cursive::{
     Cursive, CursiveExt,
 };
 
-static LOGO: &'static str = r#" |     _ _|   \  | _ _| ___ |
+static LOGO: &str = r#" |     _ _|   \  | _ _| ___ |
  |       |   |\/ |   |      |
  |       |   |   |   |      |
 _____| ___| _|  _| ___|    _|"#;
@@ -22,6 +22,7 @@ pub struct Ui {
 }
 
 impl Ui {
+    /// setup ui
     pub fn setup() -> Self {
         let mut ui = Cursive::new();
 
@@ -39,7 +40,6 @@ impl Ui {
         init_setup_ui(&mut ui);
 
         ui.add_screen();
-
         init_frontend_ui(&mut ui);
 
         ui.set_screen(0);
@@ -47,6 +47,7 @@ impl Ui {
         Self { ui }
     }
 
+    /// enter cursive's event loop
     pub fn exec(mut self) {
         self.ui.run();
     }

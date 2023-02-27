@@ -9,6 +9,7 @@ use r18::tr;
 
 use super::StepTabs;
 
+// returns welcome page
 pub fn welcome() -> NamedView<impl View> {
     let mut logo = StyledString::styled(crate::ui::LOGO, BaseColor::Cyan.light());
     logo.append_plain(tr!("\n\nWelcome to Limit up
@@ -25,6 +26,7 @@ A CLI tool that helps you to setup limit-server :)"));
                     super::prepare_install(ui);
                 }))
                 .with(|layout| {
+                    // move focus to the Next button
                     layout.set_focus_index(2).unwrap();
                 }),
         )
