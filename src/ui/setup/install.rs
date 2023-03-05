@@ -267,3 +267,9 @@ async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<(
 async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
     installer::install(config, move |_p| {}).await
 }
+
+// dummy implementation
+#[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "windows")))]
+async fn install_task_inner(cb_sink: &CbSink, config: InstallConfig) -> Result<()> {
+    Err(tr!("Unsupported platform").into())
+}

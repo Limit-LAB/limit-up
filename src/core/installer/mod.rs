@@ -29,7 +29,7 @@ pub fn find_command(
 
 #[derive(Default)]
 pub struct InstallConfig {
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))]
     pub install_root: String,
 }
 
