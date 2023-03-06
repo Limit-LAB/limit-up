@@ -7,7 +7,7 @@ use std::{
 #[allow(dead_code)]
 pub fn find_command(
     program: impl AsRef<Path>,
-    other: impl IntoIterator<Item = impl Into<PathBuf>>,    // extra path
+    other: impl IntoIterator<Item = impl Into<PathBuf>>, // extra path
 ) -> Vec<PathBuf> {
     env::var_os("PATH")
         .map(|paths| {
@@ -29,7 +29,6 @@ pub fn find_command(
 
 #[derive(Default)]
 pub struct InstallConfig {
-    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))]
     pub install_root: String,
 }
 
